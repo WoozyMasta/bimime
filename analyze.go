@@ -27,9 +27,9 @@ var defaultMagicNeededExtensions = map[string]struct{}{
 
 // Analyzer stores normalized analyze configuration for repeated calls.
 type Analyzer struct {
-	defaultPlan      AnalyzePlan
 	plansByExtension map[string]AnalyzePlan
 	prefixSize       int
+	defaultPlan      AnalyzePlan
 }
 
 // NewAnalyzer builds analyzer from options and normalizes plan declarations.

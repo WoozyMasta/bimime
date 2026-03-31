@@ -19,6 +19,7 @@ and diagnostics/crash artifacts.
 * `Analyze` supports per-extension `AnalyzePlan` overrides.
 * Use `AnalyzeMatchExtensionMagic` for targeted forced magic probing
   on selected extensions (for example `wrp`, `p3d`, `rvmat`, `bisurf`).
+* For batch processing, prefer `Analyzer` to reuse normalized config.
 
 ## Usage
 
@@ -26,6 +27,20 @@ and diagnostics/crash artifacts.
 result, err := bimime.AnalyzeFile(
     bimime.BIAmbiguousRAPOptions("terrain.wrp", nil),
 )
+if err != nil {
+    return err
+}
+
+fmt.Println(result.Probe.Resolved.ID)
+```
+
+```go
+analyzer := bimime.NewAnalyzer(bimime.AnalyzeOptions{
+    DefaultPlan:      bimime.PlanFast(),
+    PlansByExtension: bimime.BIAmbiguousRAPOverrides(),
+})
+
+result, err := analyzer.AnalyzeFile("terrain.wrp")
 if err != nil {
     return err
 }
@@ -76,3 +91,4 @@ result = bimime.Analyze(bimime.AnalyzeOptions{
 * `AnalyzeReader` reads only a prefix, not whole payload.
 * `AnalyzeFile` opens file and reads only required prefix bytes.
 * `Probe` resolves type by extension and magic bytes.
+* `strict` without payload prefix returns `insufficient_content`.

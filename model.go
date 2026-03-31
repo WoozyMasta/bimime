@@ -7,8 +7,11 @@ package bimime
 // Source describes how detection result was obtained.
 type Source string
 
-// DetectMode controls how aggressively payload content is inspected.
-type DetectMode string
+// AnalyzeMatchMode controls how detection match is performed.
+type AnalyzeMatchMode uint8
+
+// AnalyzeValidateMode controls whether strict validations are applied.
+type AnalyzeValidateMode uint8
 
 // AnalyzeIssue describes a strict-mode validation problem.
 type AnalyzeIssue string
@@ -25,14 +28,28 @@ const (
 	SourceMagicAndExtension Source = "magic+extension"
 )
 
-// Detection modes.
+// Analyze match modes.
 const (
-	// DetectModeFast resolves only by path hint (filename/extension).
-	DetectModeFast DetectMode = "fast"
-	// DetectModeNormal resolves by path hint and magic when content is required.
-	DetectModeNormal DetectMode = "normal"
-	// DetectModeStrict resolves by path hint and magic, then validates consistency.
-	DetectModeStrict DetectMode = "strict"
+	// AnalyzeMatchDefault falls back to extension+magic-as-needed behavior.
+	AnalyzeMatchDefault AnalyzeMatchMode = iota
+	// AnalyzeMatchExtension resolves only by path hint (filename/extension).
+	AnalyzeMatchExtension
+	// AnalyzeMatchExtensionMagicNeeded resolves by extension+magic, reading
+	// content only when needed by extension heuristics.
+	AnalyzeMatchExtensionMagicNeeded
+	// AnalyzeMatchExtensionMagic resolves by extension+magic and expects magic
+	// probing to be available for selected targets.
+	AnalyzeMatchExtensionMagic
+)
+
+// Analyze validation modes.
+const (
+	// AnalyzeValidateDefault falls back to no strict validation.
+	AnalyzeValidateDefault AnalyzeValidateMode = iota
+	// AnalyzeValidateNone disables strict validation checks.
+	AnalyzeValidateNone
+	// AnalyzeValidateStrict enables strict consistency and text checks.
+	AnalyzeValidateStrict
 )
 
 // Strict-mode issues.
@@ -41,6 +58,9 @@ const (
 	AnalyzeIssueMagicMismatch AnalyzeIssue = "magic_mismatch"
 	// AnalyzeIssueTextExpected means detected text payload looks binary.
 	AnalyzeIssueTextExpected AnalyzeIssue = "text_expected"
+	// AnalyzeIssueContentPatternMismatch means payload does not match expected
+	// content markers for resolved type in strict mode.
+	AnalyzeIssueContentPatternMismatch AnalyzeIssue = "content_pattern_mismatch"
 )
 
 // Type describes one known file type from registry.
@@ -73,29 +93,46 @@ type ProbeResult struct {
 	ByExtension Type `json:"by_extension" yaml:"by_extension"`
 }
 
+// AnalyzePlan describes how one file should be matched and validated.
+type AnalyzePlan struct {
+	// Match controls extension-only vs extension+magic probing behavior.
+	Match AnalyzeMatchMode `json:"match,omitempty" yaml:"match,omitempty"`
+	// Validate controls whether strict validation checks are applied.
+	Validate AnalyzeValidateMode `json:"validate,omitempty" yaml:"validate,omitempty"`
+}
+
 // AnalyzeOptions controls Analyze/AnalyzeReader/AnalyzeFile behavior.
 type AnalyzeOptions struct {
-	// Mode selects detection mode. Empty value defaults to DetectModeNormal.
-	Mode DetectMode `json:"mode,omitempty" yaml:"mode,omitempty"`
+	// PlansByExtension maps extension (without dot) to per-extension plan.
+	PlansByExtension map[string]AnalyzePlan `json:"plans_by_extension,omitempty" yaml:"plans_by_extension,omitempty"`
+	// Path is filesystem path or filename hint used for extension matching.
+	Path string `json:"path,omitempty" yaml:"path,omitempty"`
+	// Prefix is optional payload prefix already available to caller.
+	Prefix []byte `json:"prefix,omitempty" yaml:"prefix,omitempty"`
 	// PrefixSize limits bytes read from reader/file for magic and text checks.
 	// Zero or negative value uses the package default.
 	PrefixSize int `json:"prefix_size,omitempty" yaml:"prefix_size,omitempty"`
+	// DefaultPlan is used when no extension-specific override is configured.
+	DefaultPlan AnalyzePlan `json:"default_plan" yaml:"default_plan"`
 }
 
 // AnalyzeResult stores classification and validation outcome.
 type AnalyzeResult struct {
-	// Mode is effective mode after option normalization.
-	Mode DetectMode `json:"mode" yaml:"mode"`
 	// Issues contains strict-mode validation issues.
 	Issues []AnalyzeIssue `json:"issues,omitempty" yaml:"issues,omitempty"`
 	// Probe contains extension/magic matches and resolved final type.
 	Probe ProbeResult `json:"probe" yaml:"probe"`
+	// Plan is effective plan after option normalization and extension overrides.
+	Plan AnalyzePlan `json:"plan" yaml:"plan"`
 	// Valid is true when strict validation passed or was not requested.
 	Valid bool `json:"valid" yaml:"valid"`
 	// CheckedMagic reports whether strict mode validated extension against magic.
 	CheckedMagic bool `json:"checked_magic,omitempty" yaml:"checked_magic,omitempty"`
 	// CheckedText reports whether strict mode validated text-like payload.
 	CheckedText bool `json:"checked_text,omitempty" yaml:"checked_text,omitempty"`
+	// CheckedContentPattern reports whether strict mode validated type-specific
+	// content regex markers.
+	CheckedContentPattern bool `json:"checked_content_pattern,omitempty" yaml:"checked_content_pattern,omitempty"`
 	// LooksText reports quick text-likeness heuristic result when CheckedText is true.
 	LooksText bool `json:"looks_text,omitempty" yaml:"looks_text,omitempty"`
 }

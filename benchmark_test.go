@@ -49,40 +49,61 @@ var baseBenchSamples = []benchSample{
 // BenchmarkAnalyzeBatch measures Analyze throughput on batch workloads.
 func BenchmarkAnalyzeBatch(b *testing.B) {
 	b.Run("Fast_128", func(b *testing.B) {
-		benchmarkAnalyzeBatch(b, benchmarkDatasets[128], DetectModeFast)
+		benchmarkAnalyzeBatch(b, benchmarkDatasets[128], AnalyzeOptions{
+			DefaultPlan: PlanFast(),
+		})
 	})
 	b.Run("Normal_1024", func(b *testing.B) {
-		benchmarkAnalyzeBatch(b, benchmarkDatasets[1024], DetectModeNormal)
+		benchmarkAnalyzeBatch(b, benchmarkDatasets[1024], AnalyzeOptions{
+			DefaultPlan: PlanNormal(),
+		})
 	})
 	b.Run("Strict_1024", func(b *testing.B) {
-		benchmarkAnalyzeBatch(b, benchmarkDatasets[1024], DetectModeStrict)
+		benchmarkAnalyzeBatch(b, benchmarkDatasets[1024], AnalyzeOptions{
+			DefaultPlan: PlanStrict(),
+		})
+	})
+	b.Run("HybridFastMagic_1024", func(b *testing.B) {
+		benchmarkAnalyzeBatch(b, benchmarkDatasets[1024], AnalyzeOptions{
+			DefaultPlan:      PlanFast(),
+			PlansByExtension: BIAmbiguousRAPOverrides(),
+		})
 	})
 	b.Run("Normal_4096", func(b *testing.B) {
-		benchmarkAnalyzeBatch(b, benchmarkDatasets[4096], DetectModeNormal)
+		benchmarkAnalyzeBatch(b, benchmarkDatasets[4096], AnalyzeOptions{
+			DefaultPlan: PlanNormal(),
+		})
 	})
 }
 
 // BenchmarkAnalyzeReaderBatch measures AnalyzeReader throughput on batch reads.
 func BenchmarkAnalyzeReaderBatch(b *testing.B) {
 	b.Run("Normal_1024", func(b *testing.B) {
-		benchmarkAnalyzeReaderBatch(b, benchmarkDatasets[1024], DetectModeNormal)
+		benchmarkAnalyzeReaderBatch(b, benchmarkDatasets[1024], AnalyzeOptions{
+			DefaultPlan: PlanNormal(),
+		})
 	})
 	b.Run("Strict_1024", func(b *testing.B) {
-		benchmarkAnalyzeReaderBatch(b, benchmarkDatasets[1024], DetectModeStrict)
+		benchmarkAnalyzeReaderBatch(b, benchmarkDatasets[1024], AnalyzeOptions{
+			DefaultPlan: PlanStrict(),
+		})
 	})
 }
 
 // BenchmarkNeedsContentBatch measures fast pre-check for read/no-read decision.
 func BenchmarkNeedsContentBatch(b *testing.B) {
 	dataset := benchmarkDatasets[4096]
-	mode := DetectModeNormal
+	options := AnalyzeOptions{
+		DefaultPlan: PlanNormal(),
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		count := 0
 
 		for _, sample := range dataset {
-			if NeedsContent(sample.path, mode) {
+			options.Path = sample.path
+			if NeedsContent(options) {
 				count++
 			}
 		}
@@ -108,15 +129,17 @@ func buildBenchDataset(count int) []benchSample {
 }
 
 // benchmarkAnalyzeBatch runs Analyze for all entries in dataset.
-func benchmarkAnalyzeBatch(b *testing.B, dataset []benchSample, mode DetectMode) {
-	options := AnalyzeOptions{Mode: mode}
+func benchmarkAnalyzeBatch(b *testing.B, dataset []benchSample, options AnalyzeOptions) {
+	base := options
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		valid := 0
 
 		for _, sample := range dataset {
-			result := Analyze(sample.path, sample.prefix, options)
+			base.Path = sample.path
+			base.Prefix = sample.prefix
+			result := Analyze(base)
 			if result.Valid {
 				valid++
 			}
@@ -129,18 +152,23 @@ func benchmarkAnalyzeBatch(b *testing.B, dataset []benchSample, mode DetectMode)
 }
 
 // benchmarkAnalyzeReaderBatch runs AnalyzeReader for all entries in dataset.
-func benchmarkAnalyzeReaderBatch(b *testing.B, dataset []benchSample, mode DetectMode) {
-	options := AnalyzeOptions{Mode: mode}
+func benchmarkAnalyzeReaderBatch(
+	b *testing.B,
+	dataset []benchSample,
+	options AnalyzeOptions,
+) {
+	base := options
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		valid := 0
 
 		for _, sample := range dataset {
+			base.Path = sample.path
+			base.Prefix = nil
 			result, err := AnalyzeReader(
-				sample.path,
 				bytes.NewReader(sample.prefix),
-				options,
+				base,
 			)
 			if err != nil {
 				b.Fatalf("AnalyzeReader(%s): %v", sample.path, err)

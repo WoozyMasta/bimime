@@ -36,13 +36,38 @@ func TestDetectByMagic(t *testing.T) {
 		{name: "mp3-frame", data: []byte{0xFF, 0xFB, 0x90, 0x64}, id: "audio.mp3"},
 		{name: "wav", data: []byte{'R', 'I', 'F', 'F', 0x24, 0, 0, 0, 'W', 'A', 'V', 'E'}, id: "audio.wav"},
 		{name: "mp4", data: []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 2, 0}, id: "video.mp4"},
+		{
+			name: "pak-form",
+			data: []byte{'F', 'O', 'R', 'M', 0x01, 0x3C, 0x74, 0x09, 'P', 'A', 'C', '1', 'H', 'E', 'A', 'D'},
+			id:   "bi.package.pak",
+		},
+		{
+			name: "rdb-form",
+			data: []byte{'F', 'O', 'R', 'M', 0x00, 0x01, 0x2D, 0x3D, 'R', 'D', 'B', 'C', 0x06, 0x00, 0x00, 0x00},
+			id:   "bi.db.rdb",
+		},
+		{
+			name: "anm-form",
+			data: []byte{'F', 'O', 'R', 'M', 0x00, 0x00, 0x3B, 0xB5, 'A', 'N', 'I', 'M', 'S', 'E', 'T', '5'},
+			id:   "bi.animation.anm",
+		},
+		{
+			name: "xob-form",
+			data: []byte{'F', 'O', 'R', 'M', 0x00, 0x00, 0x06, 0x4B, 'X', 'O', 'B', '6', 'H', 'E', 'A', 'D'},
+			id:   "bi.object.xob",
+		},
+		{
+			name: "fnt-form",
+			data: []byte{'F', 'O', 'R', 'M', 0x00, 0x00, 0x08, 0x14, 'F', 'N', 'T', '2', 'G', 'L', 'P', 'S'},
+			id:   "bi.font.fnt",
+		},
 		{name: "odol", data: []byte("ODOL"), id: "bi.p3d.odol"},
 		{name: "mlod", data: []byte("MLOD"), id: "bi.p3d.mlod"},
 		{name: "oprw", data: []byte("OPRW"), id: "bi.wrp.oprw"},
 		{name: "8wvr", data: []byte("8WVR"), id: "bi.wrp.8wvr"},
 		{name: "9vbw", data: []byte("9VBW"), id: "bi.wrp.9vbw"},
 		{name: "0wzd", data: []byte("0WZD"), id: "bi.wrp.0wzd"},
-		{name: "paa", data: []byte{1, 255, 0, 0}, id: "bi.paa"},
+		{name: "paa", data: []byte{1, 255, 0, 0}, id: "image.paa"},
 		{name: "dxbc", data: []byte("DXBC\x00\x00"), id: "bi.shader.dxbc"},
 		{name: "seq", data: []byte{0xD3, 'S', 'E', 'Q', 0x00}, id: "bi.sequence.seq"},
 		{name: "texheaders", data: []byte("0DHT\x01\x00\x00\x00"), id: "bi.texheaders"},
@@ -72,6 +97,7 @@ func TestDetectByExtension(t *testing.T) {
 		id   string
 	}{
 		{path: "x.rvmat", id: "bi.rvmat"},
+		{path: "x.bisurf", id: "bi.surface.bisurf"},
 		{path: "x.rap", id: "bi.rap"},
 		{path: "x.jpg", id: "image.jpeg"},
 		{path: "x.svg", id: "image.svg"},
@@ -82,7 +108,6 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "x.xls", id: "application.xls"},
 		{path: "x.xlsx", id: "application.xlsx"},
 		{path: "x.ods", id: "application.ods"},
-		{path: "x.fods", id: "application.fods"},
 		{path: "x.bikey", id: "bi.sign.bikey"},
 		{path: "x.biprivatekey", id: "bi.sign.biprivatekey"},
 		{path: "x.bisign", id: "bi.sign.bisign"},
@@ -90,6 +115,7 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "economy.xml", id: "bi.ce.db.economy"},
 		{path: "events.xml", id: "bi.ce.db.events"},
 		{path: "globals.xml", id: "bi.ce.db.globals"},
+		{path: "messages.xml", id: "bi.ce.db.messages"},
 		{path: "types.xml", id: "bi.ce.db.types"},
 		{path: "init.c", id: "bi.mission.init-c"},
 		{path: "cfgeconomycore.xml", id: "bi.ce.cfgeconomycore"},
@@ -98,9 +124,19 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "cfglimitsdefinition.xml", id: "bi.ce.cfglimitsdefinition"},
 		{path: "cfglimitsdefinitionuser.xml", id: "bi.ce.cfglimitsdefinitionuser"},
 		{path: "cfgeventspawns.xml", id: "bi.ce.cfgeventspawns"},
+		{path: "cfgeventgroups.xml", id: "bi.ce.cfgeventgroups"},
 		{path: "cfgplayerspawnpoints.xml", id: "bi.ce.cfgplayerspawnpoints"},
 		{path: "cfgspawnabletypes.xml", id: "bi.ce.cfgspawnabletypes"},
 		{path: "cfgrandompresets.xml", id: "bi.ce.cfgrandompresets"},
+		{path: "cfgweather.xml", id: "bi.ce.cfgweather"},
+		{path: "cfgignorelist.xml", id: "bi.ce.cfgignorelist"},
+		{path: "ceproject-config.xml", id: "bi.ce.ceproject-config"},
+		{path: "env/hare_territories.xml", id: "bi.ce.env.territories"},
+		{path: "cfgundergroundtriggers.json", id: "bi.ce.cfgundergroundtriggers"},
+		{path: "cfgeffectarea.json", id: "bi.ce.cfgeffectarea"},
+		{path: "cfggameplay.json", id: "bi.ce.cfggameplay"},
+		{path: "gameplay-gear-presets.json", id: "bi.ce.gameplay-gear-presets"},
+		{path: "object-spawner.json", id: "bi.ce.object-spawner"},
 		{path: "mapclusterproto.xml", id: "bi.ce.mapclusterproto"},
 		{path: "mapgroupcluster2.xml", id: "bi.ce.mapgroupcluster"},
 		{path: "mapgroupdirt.xml", id: "bi.ce.mapgroupdirt"},
@@ -126,6 +162,8 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "x.imageset", id: "bi.ui.imageset"},
 		{path: "x.styles", id: "bi.ui.styles"},
 		{path: "x.qss", id: "text.qss"},
+		{path: "x.emat", id: "bi.emat"},
+		{path: "x.fxy", id: "bi.font.fxy"},
 		{path: "x.html", id: "text.html"},
 		{path: "x.sqf", id: "text.sqf"},
 		{path: "x.sqfc", id: "application.sqfc"},
@@ -140,10 +178,32 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "x.lzo", id: "application.lzo"},
 		{path: "x.edds", id: "image.edds"},
 		{path: "x.ast", id: "bi.animgraph.ast"},
+		{path: "x.agf", id: "bi.animgraph.agf"},
 		{path: "x.asi", id: "bi.animgraph.asi"},
 		{path: "x.asy", id: "bi.animgraph.asy"},
 		{path: "x.aw", id: "bi.animgraph.aw"},
 		{path: "x.agr", id: "bi.animgraph.agr"},
+		{path: "x.ae", id: "bi.animation.ae"},
+		{path: "x.adeb", id: "bi.animation.adeb"},
+		{path: "x.pap", id: "bi.animation.pap"},
+		{path: "x.siga", id: "bi.animation.siga"},
+		{path: "x.txa", id: "bi.animation.txa"},
+		{path: "x.acp", id: "bi.audio.acp"},
+		{path: "x.afm", id: "bi.audio.afm"},
+		{path: "x.sig", id: "bi.audio.sig"},
+		{path: "x.snd", id: "bi.audio.snd"},
+		{path: "x.bt", id: "bi.ai.bt"},
+		{path: "x.ct", id: "bi.component.ct"},
+		{path: "x.conf", id: "bi.config.conf"},
+		{path: "x.gamemat", id: "bi.material.gamemat"},
+		{path: "x.physmat", id: "bi.material.physmat"},
+		{path: "x.nmn", id: "bi.navmesh.nmn"},
+		{path: "x.pak", id: "bi.package.pak"},
+		{path: "x.rdb", id: "bi.db.rdb"},
+		{path: "x.stars", id: "bi.db.stars"},
+		{path: "x.st", id: "bi.db.st"},
+		{path: "x.pre", id: "bi.preview.pre"},
+		{path: "x.ragdoll", id: "bi.physics.ragdoll"},
 		{path: "x.meta", id: "bi.meta"},
 		{path: "x.gproj", id: "bi.project.gproj"},
 		{path: "x.sproj", id: "bi.project.sproj"},
@@ -161,6 +221,18 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "x.xcf", id: "image.xcf"},
 		{path: "x.ogg", id: "audio.ogg"},
 		{path: "x.dds", id: "image.dds"},
+		{path: "x.ent", id: "bi.world.ent"},
+		{path: "x.et", id: "bi.world.et"},
+		{path: "x.layer", id: "bi.world.layer"},
+		{path: "x.smap", id: "bi.world.smap"},
+		{path: "x.topo", id: "bi.world.topo"},
+		{path: "x.asc", id: "bi.terrain.asc"},
+		{path: "x.desc", id: "bi.terrain.desc"},
+		{path: "x.terr", id: "bi.terrain.terr"},
+		{path: "x.ttile", id: "bi.terrain.ttile"},
+		{path: "x.bterr", id: "bi.terrain.bterr"},
+		{path: "x.bttile", id: "bi.terrain.bttile"},
+		{path: "x.vhcsurf", id: "bi.vehicle.vhcsurf"},
 		{path: "x.bin", id: "application.bin"},
 		{path: "folder/texHeaders.bin", id: "bi.texheaders"},
 	}
@@ -186,11 +258,11 @@ func TestProbeMagicOverridesExtension(t *testing.T) {
 	if result.ByExtension.ID != "bi.rvmat" {
 		t.Fatalf("Probe extension id = %q, want bi.rvmat", result.ByExtension.ID)
 	}
-	if result.ByMagic.ID != "bi.rap" {
-		t.Fatalf("Probe magic id = %q, want bi.rap", result.ByMagic.ID)
+	if result.ByMagic.ID != "bi.rvmat.bin" {
+		t.Fatalf("Probe magic id = %q, want bi.rvmat.bin", result.ByMagic.ID)
 	}
-	if result.Resolved.ID != "bi.rap" {
-		t.Fatalf("Probe resolved id = %q, want bi.rap", result.Resolved.ID)
+	if result.Resolved.ID != "bi.rvmat.bin" {
+		t.Fatalf("Probe resolved id = %q, want bi.rvmat.bin", result.Resolved.ID)
 	}
 }
 
@@ -204,11 +276,11 @@ func TestProbeRAPOverridesBisurfExtension(t *testing.T) {
 	if result.ByExtension.ID != "bi.surface.bisurf" {
 		t.Fatalf("Probe extension id = %q, want bi.surface.bisurf", result.ByExtension.ID)
 	}
-	if result.ByMagic.ID != "bi.rap" {
-		t.Fatalf("Probe magic id = %q, want bi.rap", result.ByMagic.ID)
+	if result.ByMagic.ID != "bi.surface.bisurf.bin" {
+		t.Fatalf("Probe magic id = %q, want bi.surface.bisurf.bin", result.ByMagic.ID)
 	}
-	if result.Resolved.ID != "bi.rap" {
-		t.Fatalf("Probe resolved id = %q, want bi.rap", result.Resolved.ID)
+	if result.Resolved.ID != "bi.surface.bisurf.bin" {
+		t.Fatalf("Probe resolved id = %q, want bi.surface.bisurf.bin", result.Resolved.ID)
 	}
 }
 
@@ -222,8 +294,8 @@ func TestProbeConfigBinPrefersPathHintOverRAP(t *testing.T) {
 	if result.ByExtension.ID != "bi.config.main.bin" {
 		t.Fatalf("Probe extension id = %q, want bi.config.main.bin", result.ByExtension.ID)
 	}
-	if result.ByMagic.ID != "bi.rap" {
-		t.Fatalf("Probe magic id = %q, want bi.rap", result.ByMagic.ID)
+	if result.ByMagic.ID != "bi.config.main.bin" {
+		t.Fatalf("Probe magic id = %q, want bi.config.main.bin", result.ByMagic.ID)
 	}
 	if result.Resolved.ID != "bi.config.main.bin" {
 		t.Fatalf("Probe resolved id = %q, want bi.config.main.bin", result.Resolved.ID)
@@ -263,6 +335,36 @@ func TestProbeEddsPrefersExtensionWhenMagicAmbiguous(t *testing.T) {
 	}
 	if result.Resolved.ID != "image.edds" {
 		t.Fatalf("Probe resolved id = %q, want image.edds", result.Resolved.ID)
+	}
+}
+
+func TestProbeCfgModelsPatternSpecialization(t *testing.T) {
+	t.Parallel()
+
+	result := Probe("vehicle_hatchback.cfg", []byte("class CfgModels { class Test {}; };"))
+	if result.Source != SourceExtension {
+		t.Fatalf("Probe source = %q, want %q", result.Source, SourceExtension)
+	}
+	if result.ByExtension.ID != "bi.model.cfg" {
+		t.Fatalf("Probe extension id = %q, want bi.model.cfg", result.ByExtension.ID)
+	}
+	if result.Resolved.ID != "bi.model.cfg" {
+		t.Fatalf("Probe resolved id = %q, want bi.model.cfg", result.Resolved.ID)
+	}
+}
+
+func TestProbeCfgWithoutCfgModelsStaysGeneric(t *testing.T) {
+	t.Parallel()
+
+	result := Probe("vehicle_hatchback.cfg", []byte("foo=bar"))
+	if result.Source != SourceExtension {
+		t.Fatalf("Probe source = %q, want %q", result.Source, SourceExtension)
+	}
+	if result.ByExtension.ID != "text.cfg" {
+		t.Fatalf("Probe extension id = %q, want text.cfg", result.ByExtension.ID)
+	}
+	if result.Resolved.ID != "text.cfg" {
+		t.Fatalf("Probe resolved id = %q, want text.cfg", result.Resolved.ID)
 	}
 }
 
@@ -306,10 +408,64 @@ func TestBinaryHints(t *testing.T) {
 		{id: "bi.sign.biprivatekey", binary: true},
 		{id: "bi.sign.bisign", binary: true},
 		{id: "bi.config.main.bin", binary: true},
+		{id: "bi.rvmat.bin", binary: true},
+		{id: "bi.surface.bisurf", binary: false},
+		{id: "bi.surface.bisurf.bin", binary: true},
+		{id: "bi.emat", binary: false},
+		{id: "bi.font.fxy", binary: true},
+		{id: "bi.font.fnt", binary: true},
+		{id: "bi.animation.anm", binary: true},
+		{id: "bi.animation.ae", binary: false},
+		{id: "bi.animation.adeb", binary: true},
+		{id: "bi.animation.pap", binary: false},
+		{id: "bi.animation.siga", binary: false},
+		{id: "bi.animation.txa", binary: false},
+		{id: "bi.animgraph.agf", binary: false},
+		{id: "bi.audio.acp", binary: false},
+		{id: "bi.audio.afm", binary: false},
+		{id: "bi.audio.sig", binary: false},
+		{id: "bi.audio.snd", binary: true},
+		{id: "bi.ai.bt", binary: false},
+		{id: "bi.component.ct", binary: false},
+		{id: "bi.config.conf", binary: false},
+		{id: "bi.material.gamemat", binary: false},
+		{id: "bi.material.physmat", binary: false},
+		{id: "bi.navmesh.nmn", binary: true},
+		{id: "bi.package.pak", binary: true},
+		{id: "bi.db.rdb", binary: true},
+		{id: "bi.db.stars", binary: true},
+		{id: "bi.db.st", binary: false},
+		{id: "bi.preview.pre", binary: false},
+		{id: "bi.physics.ragdoll", binary: false},
+		{id: "bi.world.ent", binary: false},
+		{id: "bi.world.et", binary: false},
+		{id: "bi.world.layer", binary: false},
+		{id: "bi.world.smap", binary: true},
+		{id: "bi.world.topo", binary: true},
+		{id: "bi.terrain.asc", binary: false},
+		{id: "bi.terrain.desc", binary: false},
+		{id: "bi.terrain.terr", binary: true},
+		{id: "bi.terrain.ttile", binary: true},
+		{id: "bi.terrain.bterr", binary: true},
+		{id: "bi.terrain.bttile", binary: true},
+		{id: "bi.vehicle.vhcsurf", binary: false},
+		{id: "bi.effects.txo", binary: false},
+		{id: "bi.object.xob", binary: true},
 		{id: "image.dds", binary: true},
 		{id: "bi.config.main.cpp", binary: false},
 		{id: "bi.model.cfg", binary: false},
 		{id: "bi.ce.db.economy", binary: false},
+		{id: "bi.ce.db.messages", binary: false},
+		{id: "bi.ce.cfgeventgroups", binary: false},
+		{id: "bi.ce.cfgweather", binary: false},
+		{id: "bi.ce.cfgignorelist", binary: false},
+		{id: "bi.ce.ceproject-config", binary: false},
+		{id: "bi.ce.env.territories", binary: false},
+		{id: "bi.ce.cfgundergroundtriggers", binary: false},
+		{id: "bi.ce.cfgeffectarea", binary: false},
+		{id: "bi.ce.cfggameplay", binary: false},
+		{id: "bi.ce.gameplay-gear-presets", binary: false},
+		{id: "bi.ce.object-spawner", binary: false},
 		{id: "text.html", binary: false},
 		{id: "image.svg", binary: false},
 		{id: "model.obj", binary: false},
@@ -324,7 +480,6 @@ func TestBinaryHints(t *testing.T) {
 		{id: "application.xls", binary: true},
 		{id: "application.xlsx", binary: true},
 		{id: "application.ods", binary: true},
-		{id: "application.fods", binary: true},
 		{id: "bi.project.gproj", binary: false},
 		{id: "text.sqf", binary: false},
 		{id: "application.sqfc", binary: true},
@@ -366,5 +521,91 @@ func TestShortDescriptionLengthLimit(t *testing.T) {
 				short,
 			)
 		}
+	}
+}
+
+func TestBuildTypeByIDSkipsInvalidRecords(t *testing.T) {
+	t.Parallel()
+
+	index := buildTypeByID([]registryRecord{
+		{typ: Type{ID: ""}},
+		{typ: Type{ID: "A"}},
+		{typ: Type{ID: "a"}},
+		{typ: Type{ID: "B"}},
+	})
+
+	if len(index) != 2 {
+		t.Fatalf("len(index)=%d want 2", len(index))
+	}
+
+	if _, ok := index["a"]; !ok {
+		t.Fatal(`index["a"] is missing`)
+	}
+	if _, ok := index["b"]; !ok {
+		t.Fatal(`index["b"] is missing`)
+	}
+}
+
+func TestBuildFilePrefixRecordsSkipsInvalidRecords(t *testing.T) {
+	t.Parallel()
+
+	records := buildFilePrefixRecords(map[string]string{
+		"":      "bi.valid",
+		"  a  ": "",
+		"good":  "bi.good",
+	})
+
+	if len(records) != 1 {
+		t.Fatalf("len(records)=%d want 1", len(records))
+	}
+	if records[0].prefix != "good" {
+		t.Fatalf("prefix=%q want %q", records[0].prefix, "good")
+	}
+	if records[0].typeID != "bi.good" {
+		t.Fatalf("typeID=%q want %q", records[0].typeID, "bi.good")
+	}
+}
+
+func TestBuildTypeByExtensionSkipsInvalidRecords(t *testing.T) {
+	t.Parallel()
+
+	index := buildTypeByExtension([]registryRecord{
+		{typ: Type{ID: "first", Extensions: []string{"foo"}}},
+		{typ: Type{ID: "invalid", Extensions: []string{""}}},
+		{typ: Type{ID: "second", Extensions: []string{"foo", "bar"}}},
+	})
+
+	if len(index) != 2 {
+		t.Fatalf("len(index)=%d want 2", len(index))
+	}
+	if got := index["foo"].typ.ID; got != "first" {
+		t.Fatalf(`index["foo"].typ.ID=%q want %q`, got, "first")
+	}
+	if got := index["bar"].typ.ID; got != "second" {
+		t.Fatalf(`index["bar"].typ.ID=%q want %q`, got, "second")
+	}
+}
+
+func TestBuildMagicIndexSkipsEmptySignatures(t *testing.T) {
+	t.Parallel()
+
+	index := buildMagicIndex([]registryRecord{
+		{
+			typ: Type{ID: "a"},
+			magic: [][]byte{
+				nil,
+				[]byte("AA"),
+			},
+		},
+	})
+
+	if len(index) != 1 {
+		t.Fatalf("len(index)=%d want 1", len(index))
+	}
+	if got := string(index[0].signature); got != "AA" {
+		t.Fatalf("signature=%q want %q", got, "AA")
+	}
+	if got := index[0].typeID; got != "a" {
+		t.Fatalf("typeID=%q want %q", got, "a")
 	}
 }

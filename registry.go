@@ -4,10 +4,13 @@
 
 package bimime
 
+import "regexp"
+
 // registryRecord stores one runtime registry record with optional magic signatures.
 type registryRecord struct {
-	magic [][]byte
-	typ   Type
+	contentPatterns []*regexp.Regexp
+	magic           [][]byte
+	typ             Type
 }
 
 // magicMatch stores one signature mapped to a type id for probing.
@@ -97,9 +100,9 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 	},
 	{
 		typ: Type{
-			ID:          "bi.paa",
+			ID:          "image.paa",
 			MIME:        "image/x-bohemia-paa",
-			Description: "PAA texture format",
+			Description: "PAA/LEVF texture image format",
 			Extensions:  []string{"paa", "pac"},
 		},
 		magic: [][]byte{
@@ -220,6 +223,14 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 	},
 	{
 		typ: Type{
+			ID:          "bi.rvmat.bin",
+			MIME:        "application/x-bohemia-rvmat-rap",
+			Description: "RV material RAP-binarized payload",
+		},
+		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
+	},
+	{
+		typ: Type{
 			ID:          "bi.p3d",
 			MIME:        "model/x-bohemia-p3d",
 			Description: "P3D model (generic extension match without magic disambiguation)",
@@ -312,14 +323,6 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/vnd.oasis.opendocument.spreadsheet",
 			Description: "OpenDocument spreadsheet (.ods)",
 			Extensions:  []string{"ods"},
-		},
-	},
-	{
-		typ: Type{
-			ID:          "application.fods",
-			MIME:        "application/vnd.oasis.opendocument.spreadsheet-flat-xml",
-			Description: "Flat OpenDocument spreadsheet (.fods)",
-			Extensions:  []string{"fods"},
 		},
 	},
 	{
@@ -457,6 +460,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			Description: "Enfusion UI image set definition text",
 			Extensions:  []string{"imageset"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bImageSetClass\b`)},
 	},
 	{
 		typ: Type{
@@ -465,12 +469,13 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			Description: "Enfusion UI widget style definitions",
 			Extensions:  []string{"styles"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)<\s*WidgetStyles\b`)},
 	},
 	{
 		typ: Type{
 			ID:          "text.qss",
 			MIME:        "text/x-qt-stylesheet",
-			Description: "Qt stylesheet text",
+			Description: "Qt Style Sheet text (Workbench themes)",
 			Extensions:  []string{"qss"},
 		},
 	},
@@ -478,7 +483,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 		typ: Type{
 			ID:          "bi.font.fnt",
 			MIME:        "application/x-bohemia-fnt",
-			Description: "BI engine binary font resource",
+			Description: "Enfusion UI font resource (binary)",
 			Extensions:  []string{"fnt"},
 		},
 	},
@@ -486,8 +491,56 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 		typ: Type{
 			ID:          "bi.animation.anm",
 			MIME:        "application/x-bohemia-anm",
-			Description: "BI engine animation set binary payload",
+			Description: "Enfusion binary animation file",
 			Extensions:  []string{"anm"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.animation.ae",
+			MIME:        "text/x-bohemia-animation-events",
+			Description: "Animation events table text",
+			Extensions:  []string{"ae"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.animation.adeb",
+			MIME:        "application/x-bohemia-adeb",
+			Description: "Animation debug stream, likely binary; magic unknown",
+			Extensions:  []string{"adeb"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.animation.pap",
+			MIME:        "text/x-bohemia-pap",
+			Description: "Procedural animation project text",
+			Extensions:  []string{"pap"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.animation.siga",
+			MIME:        "text/x-bohemia-siga",
+			Description: "Procedural animation signal text",
+			Extensions:  []string{"siga"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.animation.txa",
+			MIME:        "text/x-bohemia-txa",
+			Description: "Text animation source (txa)",
+			Extensions:  []string{"txa"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.animgraph.agf",
+			MIME:        "text/x-bohemia-anim-graph-file",
+			Description: "Animation graph sheet file text",
+			Extensions:  []string{"agf"},
 		},
 	},
 	{
@@ -497,6 +550,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			Description: "Animation graph set template text",
 			Extensions:  []string{"ast"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animsettemplate\b`)},
 	},
 	{
 		typ: Type{
@@ -505,6 +559,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			Description: "Animation graph set instance text",
 			Extensions:  []string{"asi"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animsetinstance\b`)},
 	},
 	{
 		typ: Type{
@@ -521,6 +576,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			Description: "Animation graph workspace text",
 			Extensions:  []string{"aw"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animworkspace\b`)},
 	},
 	{
 		typ: Type{
@@ -529,6 +585,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			Description: "Animation graph definition text",
 			Extensions:  []string{"agr"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animgraph\b`)},
 	},
 	{
 		typ: Type{
@@ -542,10 +599,18 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 	{
 		typ: Type{
 			ID:          "bi.surface.bisurf",
-			MIME:        "application/x-bohemia-surface",
-			Description: "BI engine surface config (commonly RAP-binarized)",
+			MIME:        "text/x-bohemia-surface",
+			Description: "BI engine surface config text, can also be RAP",
 			Extensions:  []string{"bisurf"},
 		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.surface.bisurf.bin",
+			MIME:        "application/x-bohemia-surface-rap",
+			Description: "BI engine surface config RAP-binarized payload",
+		},
+		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
 		typ: Type{
@@ -564,17 +629,18 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 	},
 	{
 		typ: Type{
-			ID:          "bi.effects.emat",
-			MIME:        "application/x-bohemia-emat",
-			Description: "BI engine effect/material definition text",
+			ID:          "bi.emat",
+			MIME:        "text/x-bohemia-emat",
+			Description: "Enfusion material definition text",
 			Extensions:  []string{"emat"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bmaterial\b`)},
 	},
 	{
 		typ: Type{
-			ID:          "bi.effects.fxy",
+			ID:          "bi.font.fxy",
 			MIME:        "application/x-bohemia-fxy",
-			Description: "BI engine FXY text definition",
+			Description: "BI bitmap font glyph index/mapping payload",
 			Extensions:  []string{"fxy"},
 		},
 	},
@@ -582,17 +648,19 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 		typ: Type{
 			ID:          "bi.effects.ptc",
 			MIME:        "application/x-bohemia-ptc",
-			Description: "BI engine particle effect definition text",
+			Description: "Enfusion particle system definition text",
 			Extensions:  []string{"ptc"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bEffectDef\b`)},
 	},
 	{
 		typ: Type{
 			ID:          "bi.effects.txo",
-			MIME:        "application/x-bohemia-txo",
-			Description: "BI engine texture/effect related payload",
+			MIME:        "text/x-bohemia-txo",
+			Description: "Enfusion text model source (source for xob)",
 			Extensions:  []string{"txo"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$object\b`)},
 	},
 	{
 		typ: Type{
@@ -607,8 +675,120 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 		typ: Type{
 			ID:          "bi.object.xob",
 			MIME:        "application/x-bohemia-xob",
-			Description: "BI engine XOB preview/object binary payload",
+			Description: "Enfusion binary model file (built from txo)",
 			Extensions:  []string{"xob"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.audio.acp",
+			MIME:        "text/x-bohemia-acp",
+			Description: "Audio component definition text",
+			Extensions:  []string{"acp"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.audio.afm",
+			MIME:        "text/x-bohemia-afm",
+			Description: "Audio final mixer definition text",
+			Extensions:  []string{"afm"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.audio.sig",
+			MIME:        "text/x-bohemia-sig",
+			Description: "Audio signal logic definition text",
+			Extensions:  []string{"sig"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.audio.snd",
+			MIME:        "application/x-bohemia-snd",
+			Description: "Sound container payload",
+			Extensions:  []string{"snd"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ai.bt",
+			MIME:        "text/x-bohemia-behavior-tree",
+			Description: "AI behavior tree definition text",
+			Extensions:  []string{"bt"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.component.ct",
+			MIME:        "text/x-bohemia-component-template",
+			Description: "Entity component template definition text",
+			Extensions:  []string{"ct"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.config.conf",
+			MIME:        "text/x-bohemia-config",
+			Description: "Generic config text",
+			Extensions:  []string{"conf"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.material.gamemat",
+			MIME:        "text/x-bohemia-gamemat",
+			Description: "Game material definition text",
+			Extensions:  []string{"gamemat"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.material.physmat",
+			MIME:        "text/x-bohemia-physmat",
+			Description: "Physics material definition text",
+			Extensions:  []string{"physmat"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.navmesh.nmn",
+			MIME:        "application/x-bohemia-nmn",
+			Description: "Navmesh instance, likely binary; magic unknown",
+			Extensions:  []string{"nmn"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.package.pak",
+			MIME:        "application/x-bohemia-pak",
+			Description: "Game/mod data archive package",
+			Extensions:  []string{"pak"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.db.rdb",
+			MIME:        "application/x-bohemia-rdb",
+			Description: "Resource database index payload",
+			Extensions:  []string{"rdb"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.db.stars",
+			MIME:        "application/x-bohemia-stars",
+			Description: "Runtime stars database, likely binary; magic unknown",
+			Extensions:  []string{"stars"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.db.st",
+			MIME:        "text/x-bohemia-st",
+			Description: "Localization string table text",
+			Extensions:  []string{"st"},
 		},
 	},
 	{
@@ -618,6 +798,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			Description: "BI engine metadata sidecar text",
 			Extensions:  []string{"meta"},
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bMetaFileClass\b`)},
 	},
 	{
 		typ: Type{
@@ -631,8 +812,24 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 		typ: Type{
 			ID:          "bi.project.gproj",
 			MIME:        "application/x-bohemia-project",
-			Description: "Workbench project file",
+			Description: "Project-specific Workbench settings",
 			Extensions:  []string{"gproj"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.preview.pre",
+			MIME:        "text/x-bohemia-pre",
+			Description: "Resource Viewer preset text",
+			Extensions:  []string{"pre"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.physics.ragdoll",
+			MIME:        "text/x-bohemia-ragdoll",
+			Description: "Ragdoll definition text",
+			Extensions:  []string{"ragdoll"},
 		},
 	},
 	{
@@ -696,6 +893,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-addon-config-rap",
 			Description: "Addon root config.bin (RAP-binarized config)",
 		},
+		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
 		typ: Type{
@@ -710,6 +908,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-mod-config-rap",
 			Description: "Mod root mod.bin metadata config",
 		},
+		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
 		typ: Type{
@@ -717,6 +916,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-model-config",
 			Description: "Model animation config (model.cfg)",
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bclass\s+cfgmodels\b`)},
 	},
 	{
 		typ: Type{
@@ -744,6 +944,13 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.db.types",
 			MIME:        "application/xml",
 			Description: "Central Economy catalog of spawnable entities with tags and limits",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.db.messages",
+			MIME:        "application/xml",
+			Description: "Central Economy server message schedule and timing definitions",
 		},
 	},
 	{
@@ -797,6 +1004,13 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 	},
 	{
 		typ: Type{
+			ID:          "bi.ce.cfgeventgroups",
+			MIME:        "application/xml",
+			Description: "Grouping and weighting rules for dynamic event pools",
+		},
+	},
+	{
+		typ: Type{
 			ID:          "bi.ce.cfgplayerspawnpoints",
 			MIME:        "application/xml",
 			Description: "Base rules and positions used to generate player spawns",
@@ -814,6 +1028,20 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgrandompresets",
 			MIME:        "application/xml",
 			Description: "Reusable random presets for cargo and attachment generation",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.cfgweather",
+			MIME:        "application/xml",
+			Description: "Weather behavior configuration with limits and transitions",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.cfgignorelist",
+			MIME:        "application/xml",
+			Description: "Central Economy ignored entities and exclusions list",
 		},
 	},
 	{
@@ -853,6 +1081,55 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 	},
 	{
 		typ: Type{
+			ID:          "bi.ce.ceproject-config",
+			MIME:        "application/xml",
+			Description: "CEProject zg-config map descriptor (ceproject-config.xml)",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.env.territories",
+			MIME:        "application/xml",
+			Description: "CE territory layer payload (*_territories.xml)",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.cfgundergroundtriggers",
+			MIME:        "application/json",
+			Description: "Underground trigger volumes and logic definitions",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.cfgeffectarea",
+			MIME:        "application/json",
+			Description: "Effect area configuration for CE zones and modifiers",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.cfggameplay",
+			MIME:        "application/json",
+			Description: "Gameplay tuning profile used by CE and mission systems",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.gameplay-gear-presets",
+			MIME:        "application/json",
+			Description: "Gameplay gear preset catalog for random loadout assembly",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.ce.object-spawner",
+			MIME:        "application/json",
+			Description: "Object spawner definitions and placement rules",
+		},
+	},
+	{
+		typ: Type{
 			ID:          "bi.mission.sqm",
 			MIME:        "text/x-bohemia-mission-sqm",
 			Description: "Mission editor data (mission.sqm)",
@@ -871,6 +1148,102 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.stringtable.xml",
 			MIME:        "application/xml",
 			Description: "Stringtable.xml localization table",
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.world.ent",
+			MIME:        "text/x-bohemia-ent",
+			Description: "World scene definition text",
+			Extensions:  []string{"ent"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.world.et",
+			MIME:        "text/x-bohemia-et",
+			Description: "Entity template definition text",
+			Extensions:  []string{"et"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.world.layer",
+			MIME:        "text/x-bohemia-layer",
+			Description: "World layer definition text",
+			Extensions:  []string{"layer"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.world.smap",
+			MIME:        "application/x-bohemia-smap",
+			Description: "Sound map data payload",
+			Extensions:  []string{"smap"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.world.topo",
+			MIME:        "application/x-bohemia-topo",
+			Description: "Topography data payload",
+			Extensions:  []string{"topo"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.terrain.asc",
+			MIME:        "text/plain",
+			Description: "ESRI ASCII height map import/export",
+			Extensions:  []string{"asc"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.terrain.desc",
+			MIME:        "text/x-bohemia-terrain-desc",
+			Description: "Terrain dialog configuration text",
+			Extensions:  []string{"desc"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.terrain.terr",
+			MIME:        "application/x-bohemia-terr",
+			Description: "Terrain data payload",
+			Extensions:  []string{"terr"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.terrain.ttile",
+			MIME:        "application/x-bohemia-ttile",
+			Description: "Runtime terrain tile, likely binary; magic unknown",
+			Extensions:  []string{"ttile"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.terrain.bterr",
+			MIME:        "application/x-bohemia-bterr",
+			Description: "Editor terrain data, likely binary; magic unknown",
+			Extensions:  []string{"bterr"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.terrain.bttile",
+			MIME:        "application/x-bohemia-bttile",
+			Description: "Editor terrain tile, likely binary; magic unknown",
+			Extensions:  []string{"bttile"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.vehicle.vhcsurf",
+			MIME:        "text/x-bohemia-vhcsurf",
+			Description: "Vehicle surface properties definition text",
+			Extensions:  []string{"vhcsurf"},
 		},
 	},
 	{
@@ -1003,6 +1376,7 @@ var typeIDByFileName = map[string]string{
 	"economy.xml":                 "bi.ce.db.economy",
 	"events.xml":                  "bi.ce.db.events",
 	"globals.xml":                 "bi.ce.db.globals",
+	"messages.xml":                "bi.ce.db.messages",
 	"types.xml":                   "bi.ce.db.types",
 	"init.c":                      "bi.mission.init-c",
 	"cfgeconomycore.xml":          "bi.ce.cfgeconomycore",
@@ -1011,9 +1385,18 @@ var typeIDByFileName = map[string]string{
 	"cfglimitsdefinition.xml":     "bi.ce.cfglimitsdefinition",
 	"cfglimitsdefinitionuser.xml": "bi.ce.cfglimitsdefinitionuser",
 	"cfgeventspawns.xml":          "bi.ce.cfgeventspawns",
+	"cfgeventgroups.xml":          "bi.ce.cfgeventgroups",
 	"cfgplayerspawnpoints.xml":    "bi.ce.cfgplayerspawnpoints",
 	"cfgspawnabletypes.xml":       "bi.ce.cfgspawnabletypes",
 	"cfgrandompresets.xml":        "bi.ce.cfgrandompresets",
+	"cfgweather.xml":              "bi.ce.cfgweather",
+	"cfgignorelist.xml":           "bi.ce.cfgignorelist",
+	"ceproject-config.xml":        "bi.ce.ceproject-config",
+	"cfgundergroundtriggers.json": "bi.ce.cfgundergroundtriggers",
+	"cfgeffectarea.json":          "bi.ce.cfgeffectarea",
+	"cfggameplay.json":            "bi.ce.cfggameplay",
+	"gameplay-gear-presets.json":  "bi.ce.gameplay-gear-presets",
+	"object-spawner.json":         "bi.ce.object-spawner",
 	"mapclusterproto.xml":         "bi.ce.mapclusterproto",
 	"mapgroupdirt.xml":            "bi.ce.mapgroupdirt",
 	"mapgrouppos.xml":             "bi.ce.mapgrouppos",
@@ -1024,4 +1407,10 @@ var typeIDByFileName = map[string]string{
 // Used for rolling exports like mapgroupcluster1.xml, mapgroupcluster2.xml.
 var typeIDByFilePrefix = map[string]string{
 	"mapgroupcluster": "bi.ce.mapgroupcluster",
+}
+
+// typeIDByFileSuffix maps filename suffixes to type ids.
+// Used for dynamic names like hare_territories.xml.
+var typeIDByFileSuffix = map[string]string{
+	"_territories.xml": "bi.ce.env.territories",
 }

@@ -16,37 +16,21 @@ import (
 
 const defaultAnalyzePrefixSize = 4096
 
-// ParseDetectMode parses user-facing mode string.
-func ParseDetectMode(value string) (DetectMode, error) {
-	mode := DetectMode(strings.ToLower(strings.TrimSpace(value)))
-	switch mode {
-	case "", DetectModeNormal:
-		return DetectModeNormal, nil
-	case DetectModeFast, DetectModeStrict:
-		return mode, nil
-	default:
-		return "", fmt.Errorf("%w: %q", ErrInvalidDetectMode, value)
-	}
+// defaultMagicNeededExtensions marks ambiguous extension-only formats that
+// should read content in normal mode to disambiguate source vs binary payloads.
+var defaultMagicNeededExtensions = map[string]struct{}{
+	"p3d":    {},
+	"wrp":    {},
+	"rvmat":  {},
+	"bisurf": {},
 }
 
-// NeedsContent reports whether selected mode needs payload bytes for detection.
-func NeedsContent(path string, mode DetectMode) bool {
-	mode = normalizeDetectMode(mode)
-	switch mode {
-	case DetectModeFast:
-		return false
-	case DetectModeStrict:
-		return true
-	case DetectModeNormal:
-		byExtension, ok := detectByPathRecord(path)
-		if !ok {
-			return true
-		}
+// NeedsContent reports whether selected plan requires payload prefix bytes.
+func NeedsContent(options AnalyzeOptions) bool {
+	options = normalizeAnalyzeOptions(options)
+	plan := effectivePlanForPath(options.Path, options)
 
-		return hasMagicForType(byExtension.typ.ID)
-	default:
-		return true
-	}
+	return needsContentForPlan(options.Path, plan)
 }
 
 // HasMagic reports whether a registered type has at least one magic signature.
@@ -54,82 +38,155 @@ func HasMagic(typeID string) bool {
 	return hasMagicForType(typeID)
 }
 
-// Analyze classifies path/prefix pair according to selected mode.
-func Analyze(path string, prefix []byte, options AnalyzeOptions) AnalyzeResult {
-	opts := normalizeAnalyzeOptions(options)
-	probe := probeForMode(path, prefix, opts.Mode)
+// Analyze classifies path/prefix pair according to extension-aware plans.
+func Analyze(options AnalyzeOptions) AnalyzeResult {
+	options = normalizeAnalyzeOptions(options)
+	plan := effectivePlanForPath(options.Path, options)
+	probe := probeForPlan(options.Path, options.Prefix, plan)
 
 	result := AnalyzeResult{
-		Mode:  opts.Mode,
+		Plan:  plan,
 		Probe: probe,
 		Valid: true,
 	}
 
-	if opts.Mode != DetectModeStrict {
+	if plan.Validate != AnalyzeValidateStrict {
 		return result
 	}
 
-	validateStrict(&result, prefix)
+	validateStrict(&result, options.Prefix)
 	return result
 }
 
-// AnalyzeReader classifies path using prefix bytes read from reader when required.
-func AnalyzeReader(path string, reader io.Reader, options AnalyzeOptions) (AnalyzeResult, error) {
-	opts := normalizeAnalyzeOptions(options)
-	if !NeedsContent(path, opts.Mode) {
-		return Analyze(path, nil, opts), nil
+// AnalyzeReader classifies path using selected plans and optional reader.
+func AnalyzeReader(reader io.Reader, options AnalyzeOptions) (AnalyzeResult, error) {
+	options = normalizeAnalyzeOptions(options)
+	if !NeedsContent(options) {
+		return Analyze(options), nil
 	}
 	if reader == nil {
 		return AnalyzeResult{}, ErrNilReader
 	}
 
-	prefix, err := readPrefix(reader, opts.PrefixSize)
+	prefix, err := readPrefix(reader, options.PrefixSize)
 	if err != nil {
 		return AnalyzeResult{}, fmt.Errorf("read content prefix: %w", err)
 	}
 
-	return Analyze(path, prefix, opts), nil
+	options.Prefix = prefix
+	return Analyze(options), nil
 }
 
 // AnalyzeFile classifies file path and reads only required prefix bytes.
-func AnalyzeFile(path string, options AnalyzeOptions) (AnalyzeResult, error) {
-	opts := normalizeAnalyzeOptions(options)
-	if !NeedsContent(path, opts.Mode) {
-		return Analyze(path, nil, opts), nil
+func AnalyzeFile(options AnalyzeOptions) (AnalyzeResult, error) {
+	options = normalizeAnalyzeOptions(options)
+	if !NeedsContent(options) {
+		return Analyze(options), nil
 	}
 
-	f, err := os.Open(path)
+	f, err := os.Open(options.Path)
 	if err != nil {
 		return AnalyzeResult{}, fmt.Errorf("open file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
-	return AnalyzeReader(path, f, opts)
+	return AnalyzeReader(f, options)
 }
 
-// normalizeAnalyzeOptions fills defaults and normalizes detect mode.
+// normalizeAnalyzeOptions fills defaults and normalizes plan declarations.
 func normalizeAnalyzeOptions(options AnalyzeOptions) AnalyzeOptions {
-	options.Mode = normalizeDetectMode(options.Mode)
 	if options.PrefixSize <= 0 {
 		options.PrefixSize = defaultAnalyzePrefixSize
 	}
 
+	options.DefaultPlan = normalizeAnalyzePlan(options.DefaultPlan)
+	options.PlansByExtension = normalizeExtensionPlans(options.PlansByExtension)
+	options.Path = trimPathSpace(options.Path)
+
 	return options
 }
 
-// normalizeDetectMode normalizes empty/invalid mode to normal mode.
-func normalizeDetectMode(mode DetectMode) DetectMode {
-	switch mode {
-	case DetectModeFast, DetectModeNormal, DetectModeStrict:
-		return mode
+// normalizeAnalyzePlan normalizes zero/default values and invalid mixes.
+func normalizeAnalyzePlan(plan AnalyzePlan) AnalyzePlan {
+	if plan.Match == AnalyzeMatchDefault {
+		plan.Match = AnalyzeMatchExtensionMagicNeeded
+	}
+	if plan.Validate == AnalyzeValidateDefault {
+		plan.Validate = AnalyzeValidateNone
+	}
+	if plan.Validate == AnalyzeValidateStrict && plan.Match == AnalyzeMatchExtension {
+		plan.Match = AnalyzeMatchExtensionMagicNeeded
+	}
+
+	return plan
+}
+
+// normalizeExtensionPlans normalizes extension keys and plan values.
+func normalizeExtensionPlans(source map[string]AnalyzePlan) map[string]AnalyzePlan {
+	if len(source) == 0 {
+		return nil
+	}
+
+	out := make(map[string]AnalyzePlan, len(source))
+	for ext, plan := range source {
+		key := lowerKey(strings.TrimPrefix(strings.TrimSpace(ext), "."))
+		if key == "" {
+			continue
+		}
+
+		out[key] = normalizeAnalyzePlan(plan)
+	}
+
+	return out
+}
+
+// effectivePlanForPath returns extension-specific plan or normalized default.
+func effectivePlanForPath(path string, options AnalyzeOptions) AnalyzePlan {
+	if len(options.PlansByExtension) == 0 {
+		return options.DefaultPlan
+	}
+
+	ext := extensionKey(path)
+	if ext != "" {
+		if plan, ok := options.PlansByExtension[ext]; ok {
+			return plan
+		}
+	}
+
+	return options.DefaultPlan
+}
+
+// needsContentForPlan reports whether plan requires payload prefix reads.
+func needsContentForPlan(path string, plan AnalyzePlan) bool {
+	if plan.Validate == AnalyzeValidateStrict {
+		return true
+	}
+
+	switch plan.Match {
+	case AnalyzeMatchExtension:
+		return false
+	case AnalyzeMatchExtensionMagic:
+		return true
+	case AnalyzeMatchExtensionMagicNeeded:
+		extension := extensionKey(path)
+		if _, ok := defaultMagicNeededExtensions[extension]; ok {
+			return true
+		}
+
+		byExtension, ok := detectByPathRecord(path)
+		if !ok {
+			return true
+		}
+
+		return len(byExtension.magic) > 0
 	default:
-		return DetectModeNormal
+		return true
 	}
 }
 
-// probeForMode picks extension-only or extension+magic probing by mode.
-func probeForMode(path string, prefix []byte, mode DetectMode) ProbeResult {
-	if mode == DetectModeFast {
+// probeForPlan picks extension-only or extension+magic probing by plan.
+func probeForPlan(path string, prefix []byte, plan AnalyzePlan) ProbeResult {
+	if plan.Match == AnalyzeMatchExtension {
 		return extensionOnlyProbe(path)
 	}
 
@@ -174,6 +231,13 @@ func validateStrict(result *AnalyzeResult, prefix []byte) {
 			result.Issues = append(result.Issues, AnalyzeIssueMagicMismatch)
 		}
 	}
+	if hasContentPatternForType(result.Probe.Resolved.ID) {
+		result.CheckedContentPattern = true
+		if !matchContentPatternForType(result.Probe.Resolved.ID, prefix) {
+			result.Valid = false
+			result.Issues = append(result.Issues, AnalyzeIssueContentPatternMismatch)
+		}
+	}
 
 	if result.Probe.Resolved.Binary {
 		return
@@ -187,7 +251,7 @@ func validateStrict(result *AnalyzeResult, prefix []byte) {
 	}
 }
 
-// hasMagicForType reports whether registry record has at least one magic signature.
+// hasMagicForType reports whether registry record has at least one signature.
 func hasMagicForType(typeID string) bool {
 	record, ok := typeByID[typeID]
 	if ok {
@@ -201,6 +265,44 @@ func hasMagicForType(typeID string) bool {
 	}
 
 	return len(record.magic) > 0
+}
+
+// hasContentPatternForType reports whether type has at least one content regex.
+func hasContentPatternForType(typeID string) bool {
+	record, ok := typeByID[typeID]
+	if ok {
+		return len(record.contentPatterns) > 0
+	}
+
+	key := strings.ToLower(strings.TrimSpace(typeID))
+	record, ok = typeByID[key]
+	if !ok {
+		return false
+	}
+
+	return len(record.contentPatterns) > 0
+}
+
+// matchContentPatternForType reports whether payload matches any configured regex.
+func matchContentPatternForType(typeID string, prefix []byte) bool {
+	record, ok := typeByID[typeID]
+	if !ok {
+		key := strings.ToLower(strings.TrimSpace(typeID))
+		record, ok = typeByID[key]
+		if !ok {
+			return false
+		}
+	}
+	if len(record.contentPatterns) == 0 {
+		return true
+	}
+	for _, pattern := range record.contentPatterns {
+		if pattern.Match(prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // readPrefix reads at most limit bytes from reader and tolerates short inputs.

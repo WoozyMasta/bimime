@@ -25,38 +25,49 @@ func (r *countingReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func TestParseDetectMode(t *testing.T) {
-	t.Parallel()
-
-	mode, err := ParseDetectMode(" strict ")
-	if err != nil {
-		t.Fatalf("ParseDetectMode(strict): %v", err)
-	}
-	if mode != DetectModeStrict {
-		t.Fatalf("mode=%q want %q", mode, DetectModeStrict)
-	}
-
-	if _, err := ParseDetectMode("turbo"); err == nil {
-		t.Fatal("ParseDetectMode(turbo): expected error")
-	}
-}
-
 func TestNeedsContent(t *testing.T) {
 	t.Parallel()
 
-	if NeedsContent("x.rvmat", DetectModeFast) {
-		t.Fatal("NeedsContent(rvmat, fast): want false")
+	if NeedsContent(AnalyzeOptions{
+		Path:        "x.rvmat",
+		DefaultPlan: PlanFast(),
+	}) {
+		t.Fatal("NeedsContent(rvmat, extension-only): want false")
 	}
-	if NeedsContent("x.rvmat", DetectModeNormal) {
-		t.Fatal("NeedsContent(rvmat, normal): want false")
+	if NeedsContent(AnalyzeOptions{
+		Path:        "x.rvmat",
+		DefaultPlan: PlanNormal(),
+	}) != true {
+		t.Fatal("NeedsContent(rvmat, magic-needed): want true")
 	}
-	if !NeedsContent("x.png", DetectModeNormal) {
-		t.Fatal("NeedsContent(png, normal): want true")
+	if NeedsContent(AnalyzeOptions{
+		Path:        "x.bisurf",
+		DefaultPlan: PlanNormal(),
+	}) != true {
+		t.Fatal("NeedsContent(bisurf, magic-needed): want true")
 	}
-	if !NeedsContent("x.unknown", DetectModeNormal) {
-		t.Fatal("NeedsContent(unknown, normal): want true")
+	if NeedsContent(AnalyzeOptions{
+		Path:        "x.emat",
+		DefaultPlan: PlanNormal(),
+	}) {
+		t.Fatal("NeedsContent(emat, magic-needed): want false")
 	}
-	if !NeedsContent("x.rvmat", DetectModeStrict) {
+	if !NeedsContent(AnalyzeOptions{
+		Path:        "x.png",
+		DefaultPlan: PlanNormal(),
+	}) {
+		t.Fatal("NeedsContent(png, magic-needed): want true")
+	}
+	if !NeedsContent(AnalyzeOptions{
+		Path:        "x.unknown",
+		DefaultPlan: PlanNormal(),
+	}) {
+		t.Fatal("NeedsContent(unknown, magic-needed): want true")
+	}
+	if !NeedsContent(AnalyzeOptions{
+		Path:        "x.rvmat",
+		DefaultPlan: PlanStrict(),
+	}) {
 		t.Fatal("NeedsContent(rvmat, strict): want true")
 	}
 }
@@ -64,11 +75,11 @@ func TestNeedsContent(t *testing.T) {
 func TestAnalyzeFastIgnoresMagic(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(
-		"config.rvmat",
-		[]byte{0x00, 'r', 'a', 'P', 0x00},
-		AnalyzeOptions{Mode: DetectModeFast},
-	)
+	result := Analyze(AnalyzeOptions{
+		Path:        "config.rvmat",
+		Prefix:      []byte{0x00, 'r', 'a', 'P', 0x00},
+		DefaultPlan: PlanFast(),
+	})
 
 	if result.Probe.Resolved.ID != "bi.rvmat" {
 		t.Fatalf("resolved=%q want bi.rvmat", result.Probe.Resolved.ID)
@@ -81,11 +92,11 @@ func TestAnalyzeFastIgnoresMagic(t *testing.T) {
 func TestAnalyzeNormalUsesMagic(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(
-		"texture.png",
-		[]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A},
-		AnalyzeOptions{Mode: DetectModeNormal},
-	)
+	result := Analyze(AnalyzeOptions{
+		Path:        "texture.png",
+		Prefix:      []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A},
+		DefaultPlan: PlanNormal(),
+	})
 
 	if result.Probe.Resolved.ID != "image.png" {
 		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
@@ -95,14 +106,48 @@ func TestAnalyzeNormalUsesMagic(t *testing.T) {
 	}
 }
 
+func TestAnalyzeNormalUsesMagicForRVMatByDefault(t *testing.T) {
+	t.Parallel()
+
+	result := Analyze(AnalyzeOptions{
+		Path:        "config.rvmat",
+		Prefix:      []byte{0x00, 'r', 'a', 'P', 0x00},
+		DefaultPlan: PlanNormal(),
+	})
+
+	if result.Probe.Resolved.ID != "bi.rvmat.bin" {
+		t.Fatalf("resolved=%q want bi.rvmat.bin", result.Probe.Resolved.ID)
+	}
+	if result.Probe.ByMagic.ID != "bi.rvmat.bin" {
+		t.Fatalf("byMagic=%q want bi.rvmat.bin", result.Probe.ByMagic.ID)
+	}
+}
+
+func TestAnalyzeNormalUsesMagicForBisurfByDefault(t *testing.T) {
+	t.Parallel()
+
+	result := Analyze(AnalyzeOptions{
+		Path:        "armor.bisurf",
+		Prefix:      []byte{0x00, 'r', 'a', 'P', 0x00},
+		DefaultPlan: PlanNormal(),
+	})
+
+	if result.Probe.Resolved.ID != "bi.surface.bisurf.bin" {
+		t.Fatalf("resolved=%q want bi.surface.bisurf.bin", result.Probe.Resolved.ID)
+	}
+	if result.Probe.ByMagic.ID != "bi.surface.bisurf.bin" {
+		t.Fatalf("byMagic=%q want bi.surface.bisurf.bin", result.Probe.ByMagic.ID)
+	}
+}
+
 func TestAnalyzeStrictMagicMismatch(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(
-		"texture.png",
-		[]byte("NOTPNG"),
-		AnalyzeOptions{Mode: DetectModeStrict},
-	)
+	result := Analyze(AnalyzeOptions{
+		Path:        "texture.png",
+		Prefix:      []byte("NOTPNG"),
+		DefaultPlan: PlanStrict(),
+	})
 
 	if result.Valid {
 		t.Fatal("strict result must be invalid on magic mismatch")
@@ -118,11 +163,11 @@ func TestAnalyzeStrictMagicMismatch(t *testing.T) {
 func TestAnalyzeStrictTextValidation(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(
-		"script.sqf",
-		[]byte{0x00, 0x01, 0x02},
-		AnalyzeOptions{Mode: DetectModeStrict},
-	)
+	result := Analyze(AnalyzeOptions{
+		Path:        "script.sqf",
+		Prefix:      []byte{0x00, 0x01, 0x02},
+		DefaultPlan: PlanStrict(),
+	})
 
 	if result.Valid {
 		t.Fatal("strict result must be invalid for binary-like text payload")
@@ -138,19 +183,61 @@ func TestAnalyzeStrictTextValidation(t *testing.T) {
 	}
 }
 
+func TestAnalyzeStrictContentPatternMismatch(t *testing.T) {
+	t.Parallel()
+
+	result := Analyze(AnalyzeOptions{
+		Path:        "mesh.txo",
+		Prefix:      []byte("not a txo payload"),
+		DefaultPlan: PlanStrict(),
+	})
+
+	if result.Valid {
+		t.Fatal("strict result must be invalid on content pattern mismatch")
+	}
+	if !result.CheckedContentPattern {
+		t.Fatal("strict result must check content pattern for txo")
+	}
+	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueContentPatternMismatch {
+		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueContentPatternMismatch)
+	}
+}
+
+func TestAnalyzeStrictContentPatternWithLeadingComments(t *testing.T) {
+	t.Parallel()
+
+	result := Analyze(AnalyzeOptions{
+		Path: "mesh.txo",
+		Prefix: []byte(
+			"// generated file\n\t# note\n  \n\t$object \"x\" {\n}",
+		),
+		DefaultPlan: PlanStrict(),
+	})
+
+	if !result.Valid {
+		t.Fatalf("strict result must be valid, issues=%v", result.Issues)
+	}
+	if !result.CheckedContentPattern {
+		t.Fatal("strict result must check content pattern for txo")
+	}
+}
+
 func TestAnalyzeReaderSkipsReadWhenNotNeeded(t *testing.T) {
 	t.Parallel()
 
-	reader := &countingReader{data: []byte{0x00, 'r', 'a', 'P'}}
-	result, err := AnalyzeReader("x.rvmat", reader, AnalyzeOptions{Mode: DetectModeNormal})
+	reader := &countingReader{data: []byte("class CfgFoo {}")}
+	result, err := AnalyzeReader(reader, AnalyzeOptions{
+		Path:        "x.sqf",
+		DefaultPlan: PlanNormal(),
+	})
 	if err != nil {
-		t.Fatalf("AnalyzeReader(rvmat, normal): %v", err)
+		t.Fatalf("AnalyzeReader(sqf): %v", err)
 	}
 	if reader.reads != 0 {
 		t.Fatalf("reads=%d want 0", reader.reads)
 	}
-	if result.Probe.Resolved.ID != "bi.rvmat" {
-		t.Fatalf("resolved=%q want bi.rvmat", result.Probe.Resolved.ID)
+	if result.Probe.Resolved.ID != "text.sqf" {
+		t.Fatalf("resolved=%q want text.sqf", result.Probe.Resolved.ID)
 	}
 }
 
@@ -160,12 +247,15 @@ func TestAnalyzeReaderReadsWhenNeeded(t *testing.T) {
 	reader := &countingReader{
 		data: []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A},
 	}
-	result, err := AnalyzeReader("x.png", reader, AnalyzeOptions{Mode: DetectModeNormal})
+	result, err := AnalyzeReader(reader, AnalyzeOptions{
+		Path:        "x.png",
+		DefaultPlan: PlanNormal(),
+	})
 	if err != nil {
-		t.Fatalf("AnalyzeReader(png, normal): %v", err)
+		t.Fatalf("AnalyzeReader(png): %v", err)
 	}
 	if reader.reads == 0 {
-		t.Fatal("reader must be consumed for png in normal mode")
+		t.Fatal("reader must be consumed for png")
 	}
 	if result.Probe.Resolved.ID != "image.png" {
 		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
@@ -183,11 +273,80 @@ func TestAnalyzeFile(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	result, err := AnalyzeFile(filePath, AnalyzeOptions{Mode: DetectModeNormal})
+	result, err := AnalyzeFile(AnalyzeOptions{
+		Path:        filePath,
+		DefaultPlan: PlanNormal(),
+	})
 	if err != nil {
 		t.Fatalf("AnalyzeFile: %v", err)
 	}
 	if result.Probe.Resolved.ID != "image.png" {
 		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
+	}
+}
+
+func TestNeedsContentFastWithWRPMagicOverride(t *testing.T) {
+	t.Parallel()
+
+	if NeedsContent(AnalyzeOptions{
+		Path:        "terrain.wrp",
+		DefaultPlan: PlanFast(),
+		PlansByExtension: map[string]AnalyzePlan{
+			"wrp": {
+				Match: AnalyzeMatchExtensionMagic,
+			},
+		},
+	}) != true {
+		t.Fatal("NeedsContent(wrp override): want true")
+	}
+}
+
+func TestAnalyzeReaderFastWithWRPMagicOverride(t *testing.T) {
+	t.Parallel()
+
+	reader := &countingReader{data: []byte("9VBW\x00\x00")}
+	result, err := AnalyzeReader(reader, AnalyzeOptions{
+		Path:        "terrain.wrp",
+		DefaultPlan: PlanFast(),
+		PlansByExtension: map[string]AnalyzePlan{
+			"wrp": {
+				Match: AnalyzeMatchExtensionMagic,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeReader: %v", err)
+	}
+	if reader.reads == 0 {
+		t.Fatal("reader must be consumed for wrp magic override")
+	}
+	if result.Probe.Resolved.ID != "bi.wrp.9vbw" {
+		t.Fatalf("resolved=%q want bi.wrp.9vbw", result.Probe.Resolved.ID)
+	}
+}
+
+func TestAnalyzeNormalWithStrictOverrideByExtension(t *testing.T) {
+	t.Parallel()
+
+	result := Analyze(AnalyzeOptions{
+		Path:        "script.sqf",
+		Prefix:      []byte{0x00, 0x01, 0x02},
+		DefaultPlan: PlanNormal(),
+		PlansByExtension: map[string]AnalyzePlan{
+			"sqf": {
+				Match:    AnalyzeMatchExtensionMagicNeeded,
+				Validate: AnalyzeValidateStrict,
+			},
+		},
+	})
+
+	if result.Valid {
+		t.Fatal("result must be invalid for strict sqf override")
+	}
+	if !result.CheckedText {
+		t.Fatal("result must check text in strict sqf override")
+	}
+	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueTextExpected {
+		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueTextExpected)
 	}
 }

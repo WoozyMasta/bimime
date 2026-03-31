@@ -183,6 +183,22 @@ func TestAnalyzeStrictTextValidation(t *testing.T) {
 	}
 }
 
+func TestAnalyzeStrictWithoutPrefixReportsInsufficientContent(t *testing.T) {
+	t.Parallel()
+
+	result := Analyze(AnalyzeOptions{
+		Path:        "script.sqf",
+		DefaultPlan: PlanStrict(),
+	})
+
+	if result.Valid {
+		t.Fatal("strict result must be invalid without content prefix")
+	}
+	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueInsufficientContent {
+		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueInsufficientContent)
+	}
+}
+
 func TestAnalyzeStrictContentPatternMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -348,5 +364,23 @@ func TestAnalyzeNormalWithStrictOverrideByExtension(t *testing.T) {
 	}
 	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueTextExpected {
 		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueTextExpected)
+	}
+}
+
+func TestAnalyzerReuse(t *testing.T) {
+	t.Parallel()
+
+	analyzer := NewAnalyzer(AnalyzeOptions{
+		DefaultPlan: PlanNormal(),
+	})
+	if !analyzer.NeedsContent("x.png") {
+		t.Fatal("analyzer.NeedsContent(png): want true")
+	}
+
+	result := analyzer.Analyze("texture.png", []byte{
+		0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+	})
+	if result.Probe.Resolved.ID != "image.png" {
+		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
 	}
 }

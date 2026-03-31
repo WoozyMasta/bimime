@@ -71,7 +71,7 @@ func Registry() []Type {
 func Lookup(id string) (Type, bool) {
 	record, ok := typeByID[strings.ToLower(strings.TrimSpace(id))]
 	if !ok {
-		return UnknownType, false
+		return UnknownType(), false
 	}
 
 	return cloneType(record.typ), true
@@ -93,9 +93,9 @@ func Probe(path string, prefix []byte) ProbeResult {
 	byMagicRecord, okMagic := detectByMagicRecord(prefix)
 
 	result := ProbeResult{
-		Resolved:    UnknownType,
-		ByMagic:     UnknownType,
-		ByExtension: UnknownType,
+		Resolved:    UnknownType(),
+		ByMagic:     UnknownType(),
+		ByExtension: UnknownType(),
 		Source:      SourceUnknown,
 		Extension:   extension,
 	}
@@ -178,7 +178,7 @@ func specializeByExtensionAndContent(
 func DetectByExtension(path string) (Type, bool) {
 	record, ok := detectByPathRecordWithExtension(path, extensionKey(path))
 	if !ok {
-		return UnknownType, false
+		return UnknownType(), false
 	}
 
 	return cloneType(record.typ), true
@@ -188,7 +188,7 @@ func DetectByExtension(path string) (Type, bool) {
 func DetectByMagic(prefix []byte) (Type, bool) {
 	record, ok := detectByMagicRecord(prefix)
 	if !ok {
-		return UnknownType, false
+		return UnknownType(), false
 	}
 
 	return cloneType(record.typ), true

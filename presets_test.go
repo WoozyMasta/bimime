@@ -2,6 +2,21 @@ package bimime
 
 import "testing"
 
+func TestBIAmbiguousRAPExtensionsIsImmutable(t *testing.T) {
+	t.Parallel()
+
+	extensions := BIAmbiguousRAPExtensions()
+	if len(extensions) != 4 {
+		t.Fatalf("len(extensions)=%d want 4", len(extensions))
+	}
+
+	extensions[0] = "changed"
+	again := BIAmbiguousRAPExtensions()
+	if again[0] == "changed" {
+		t.Fatal("BIAmbiguousRAPExtensions must return independent copy")
+	}
+}
+
 func TestBIAmbiguousRAPOverrides(t *testing.T) {
 	t.Parallel()
 

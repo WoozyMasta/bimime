@@ -25,12 +25,28 @@ var defaultMagicNeededExtensions = map[string]struct{}{
 	"bisurf": {},
 }
 
+// Analyzer stores normalized analyze configuration for repeated calls.
+type Analyzer struct {
+	defaultPlan      AnalyzePlan
+	plansByExtension map[string]AnalyzePlan
+	prefixSize       int
+}
+
+// NewAnalyzer builds analyzer from options and normalizes plan declarations.
+func NewAnalyzer(options AnalyzeOptions) Analyzer {
+	options = normalizeAnalyzeOptions(options)
+
+	return Analyzer{
+		defaultPlan:      options.DefaultPlan,
+		plansByExtension: options.PlansByExtension,
+		prefixSize:       options.PrefixSize,
+	}
+}
+
 // NeedsContent reports whether selected plan requires payload prefix bytes.
 func NeedsContent(options AnalyzeOptions) bool {
-	options = normalizeAnalyzeOptions(options)
-	plan := effectivePlanForPath(options.Path, options)
-
-	return needsContentForPlan(options.Path, plan)
+	analyzer := NewAnalyzer(options)
+	return analyzer.NeedsContent(options.Path)
 }
 
 // HasMagic reports whether a registered type has at least one magic signature.
@@ -38,11 +54,19 @@ func HasMagic(typeID string) bool {
 	return hasMagicForType(typeID)
 }
 
-// Analyze classifies path/prefix pair according to extension-aware plans.
-func Analyze(options AnalyzeOptions) AnalyzeResult {
-	options = normalizeAnalyzeOptions(options)
-	plan := effectivePlanForPath(options.Path, options)
-	probe := probeForPlan(options.Path, options.Prefix, plan)
+// NeedsContent reports whether payload prefix is required for this path.
+func (analyzer Analyzer) NeedsContent(path string) bool {
+	path = trimPathSpace(path)
+	plan := analyzer.effectivePlan(path)
+
+	return needsContentForPlan(path, plan)
+}
+
+// Analyze classifies path/prefix pair according to analyzer plan.
+func (analyzer Analyzer) Analyze(path string, prefix []byte) AnalyzeResult {
+	path = trimPathSpace(path)
+	plan := analyzer.effectivePlan(path)
+	probe := probeForPlan(path, prefix, plan)
 
 	result := AnalyzeResult{
 		Plan:  plan,
@@ -54,43 +78,60 @@ func Analyze(options AnalyzeOptions) AnalyzeResult {
 		return result
 	}
 
-	validateStrict(&result, options.Prefix)
+	validateStrict(&result, prefix)
 	return result
 }
 
-// AnalyzeReader classifies path using selected plans and optional reader.
-func AnalyzeReader(reader io.Reader, options AnalyzeOptions) (AnalyzeResult, error) {
-	options = normalizeAnalyzeOptions(options)
-	if !NeedsContent(options) {
-		return Analyze(options), nil
+// Analyze classifies path/prefix pair according to extension-aware plans.
+func Analyze(options AnalyzeOptions) AnalyzeResult {
+	analyzer := NewAnalyzer(options)
+	return analyzer.Analyze(options.Path, options.Prefix)
+}
+
+// AnalyzeReader classifies path using analyzer and optional reader.
+func (analyzer Analyzer) AnalyzeReader(path string, reader io.Reader) (AnalyzeResult, error) {
+	path = trimPathSpace(path)
+	if !analyzer.NeedsContent(path) {
+		return analyzer.Analyze(path, nil), nil
 	}
 	if reader == nil {
 		return AnalyzeResult{}, ErrNilReader
 	}
 
-	prefix, err := readPrefix(reader, options.PrefixSize)
+	prefix, err := readPrefix(reader, analyzer.prefixSize)
 	if err != nil {
 		return AnalyzeResult{}, fmt.Errorf("read content prefix: %w", err)
 	}
 
-	options.Prefix = prefix
-	return Analyze(options), nil
+	return analyzer.Analyze(path, prefix), nil
+}
+
+// AnalyzeReader classifies path using selected plans and optional reader.
+func AnalyzeReader(reader io.Reader, options AnalyzeOptions) (AnalyzeResult, error) {
+	analyzer := NewAnalyzer(options)
+	return analyzer.AnalyzeReader(options.Path, reader)
 }
 
 // AnalyzeFile classifies file path and reads only required prefix bytes.
-func AnalyzeFile(options AnalyzeOptions) (AnalyzeResult, error) {
-	options = normalizeAnalyzeOptions(options)
-	if !NeedsContent(options) {
-		return Analyze(options), nil
+func (analyzer Analyzer) AnalyzeFile(path string) (AnalyzeResult, error) {
+	path = trimPathSpace(path)
+	if !analyzer.NeedsContent(path) {
+		return analyzer.Analyze(path, nil), nil
 	}
 
-	f, err := os.Open(options.Path)
+	f, err := os.Open(path)
 	if err != nil {
 		return AnalyzeResult{}, fmt.Errorf("open file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
-	return AnalyzeReader(f, options)
+	return analyzer.AnalyzeReader(path, f)
+}
+
+// AnalyzeFile classifies file path and reads only required prefix bytes.
+func AnalyzeFile(options AnalyzeOptions) (AnalyzeResult, error) {
+	analyzer := NewAnalyzer(options)
+	return analyzer.AnalyzeFile(options.Path)
 }
 
 // normalizeAnalyzeOptions fills defaults and normalizes plan declarations.
@@ -141,19 +182,19 @@ func normalizeExtensionPlans(source map[string]AnalyzePlan) map[string]AnalyzePl
 }
 
 // effectivePlanForPath returns extension-specific plan or normalized default.
-func effectivePlanForPath(path string, options AnalyzeOptions) AnalyzePlan {
-	if len(options.PlansByExtension) == 0 {
-		return options.DefaultPlan
+func (analyzer Analyzer) effectivePlan(path string) AnalyzePlan {
+	if len(analyzer.plansByExtension) == 0 {
+		return analyzer.defaultPlan
 	}
 
 	ext := extensionKey(path)
 	if ext != "" {
-		if plan, ok := options.PlansByExtension[ext]; ok {
+		if plan, ok := analyzer.plansByExtension[ext]; ok {
 			return plan
 		}
 	}
 
-	return options.DefaultPlan
+	return analyzer.defaultPlan
 }
 
 // needsContentForPlan reports whether plan requires payload prefix reads.
@@ -201,9 +242,9 @@ func extensionOnlyProbe(path string) ProbeResult {
 		return ProbeResult{
 			Source:      SourceUnknown,
 			Extension:   extension,
-			Resolved:    UnknownType,
-			ByMagic:     UnknownType,
-			ByExtension: UnknownType,
+			Resolved:    UnknownType(),
+			ByMagic:     UnknownType(),
+			ByExtension: UnknownType(),
 		}
 	}
 
@@ -213,7 +254,7 @@ func extensionOnlyProbe(path string) ProbeResult {
 		Source:      SourceExtension,
 		Extension:   extension,
 		Resolved:    byExtensionType,
-		ByMagic:     UnknownType,
+		ByMagic:     UnknownType(),
 		ByExtension: byExtensionType,
 	}
 }
@@ -223,8 +264,13 @@ func validateStrict(result *AnalyzeResult, prefix []byte) {
 	if result == nil {
 		return
 	}
+	if len(prefix) == 0 {
+		result.Valid = false
+		result.Issues = append(result.Issues, AnalyzeIssueInsufficientContent)
+		return
+	}
 
-	if result.Probe.ByExtension.ID != UnknownType.ID && hasMagicForType(result.Probe.ByExtension.ID) {
+	if result.Probe.ByExtension.ID != UnknownType().ID && hasMagicForType(result.Probe.ByExtension.ID) {
 		result.CheckedMagic = true
 		if result.Probe.ByMagic.ID != result.Probe.ByExtension.ID {
 			result.Valid = false

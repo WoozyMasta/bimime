@@ -14,6 +14,7 @@ Use Analyze/AnalyzeReader/AnalyzeFile with AnalyzeOptions and AnalyzePlan:
   - extension-specific plan overrides for mixed corpora.
   - fast + forced magic for ambiguous RAP-like extensions
     via BIAmbiguousRAPOptions.
+  - Analyzer for repeated calls with reused normalized config.
 
 Magic-byte detection is considered more reliable than extension-only detection.
 Use Probe when both filename and payload prefix are available.

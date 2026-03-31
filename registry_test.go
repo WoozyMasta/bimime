@@ -1,6 +1,7 @@
 package bimime
 
 import (
+	"bytes"
 	"testing"
 	"unicode/utf8"
 )
@@ -607,5 +608,66 @@ func TestBuildMagicIndexSkipsEmptySignatures(t *testing.T) {
 	}
 	if got := index[0].typeID; got != "a" {
 		t.Fatalf("typeID=%q want %q", got, "a")
+	}
+}
+
+func TestRegistryRecordsIntegrity(t *testing.T) {
+	t.Parallel()
+
+	seenIDs := make(map[string]struct{}, len(registryRecords))
+	seenExtensions := make(map[string]struct{})
+	for _, record := range registryRecords {
+		id := lowerKey(record.typ.ID)
+		if id == "" {
+			t.Fatal("registry contains empty type id")
+		}
+		if _, exists := seenIDs[id]; exists {
+			t.Fatalf("registry contains duplicate type id %q", id)
+		}
+		seenIDs[id] = struct{}{}
+
+		for _, ext := range record.typ.Extensions {
+			key := lowerKey(ext)
+			if key == "" {
+				t.Fatalf("registry contains empty extension for type %q", id)
+			}
+			if _, exists := seenExtensions[key]; exists {
+				t.Fatalf("registry contains duplicate extension mapping %q", key)
+			}
+			seenExtensions[key] = struct{}{}
+		}
+
+		for index, signature := range record.magic {
+			if len(signature) == 0 {
+				t.Fatalf("registry contains empty magic for %q at index %d", id, index)
+			}
+		}
+	}
+
+	if len(seenIDs) != len(typeByID) {
+		t.Fatalf("typeByID size mismatch: records=%d index=%d", len(seenIDs), len(typeByID))
+	}
+	if len(seenExtensions) != len(typeByExtension) {
+		t.Fatalf(
+			"typeByExtension size mismatch: records=%d index=%d",
+			len(seenExtensions),
+			len(typeByExtension),
+		)
+	}
+
+	for _, record := range registryRecords {
+		for _, signature := range record.magic {
+			found := false
+			for _, indexed := range magicIndex {
+				if indexed.typeID == lowerKey(record.typ.ID) &&
+					bytes.Equal(indexed.signature, signature) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("missing magic index entry for type %q", record.typ.ID)
+			}
+		}
 	}
 }

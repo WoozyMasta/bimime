@@ -58,6 +58,8 @@ const (
 	AnalyzeIssueMagicMismatch AnalyzeIssue = "magic_mismatch"
 	// AnalyzeIssueTextExpected means detected text payload looks binary.
 	AnalyzeIssueTextExpected AnalyzeIssue = "text_expected"
+	// AnalyzeIssueInsufficientContent means strict checks require payload prefix.
+	AnalyzeIssueInsufficientContent AnalyzeIssue = "insufficient_content"
 	// AnalyzeIssueContentPatternMismatch means payload does not match expected
 	// content markers for resolved type in strict mode.
 	AnalyzeIssueContentPatternMismatch AnalyzeIssue = "content_pattern_mismatch"
@@ -137,10 +139,14 @@ type AnalyzeResult struct {
 	LooksText bool `json:"looks_text,omitempty" yaml:"looks_text,omitempty"`
 }
 
-// UnknownType is returned when registry has no match for extension/magic.
-var UnknownType = Type{
+var unknownType = Type{
 	ID:          "unknown",
 	MIME:        "application/octet-stream",
 	Description: "Unknown or generic binary payload",
 	Binary:      true,
+}
+
+// UnknownType returns a copy of fallback type used for no-match cases.
+func UnknownType() Type {
+	return unknownType
 }

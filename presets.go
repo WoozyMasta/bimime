@@ -4,20 +4,28 @@
 
 package bimime
 
-// BIAmbiguousRAPExtensions is the default extension set for fast mode with
-// forced magic probing for BI formats that can appear as source or binarized.
-var BIAmbiguousRAPExtensions = []string{
+var defaultBIAmbiguousRAPExtensions = []string{
 	"p3d",
 	"wrp",
 	"rvmat",
 	"bisurf",
 }
 
+// BIAmbiguousRAPExtensions returns default extension set for fast mode with
+// forced magic probing for BI formats that can appear as source or binarized.
+func BIAmbiguousRAPExtensions() []string {
+	out := make([]string, len(defaultBIAmbiguousRAPExtensions))
+	copy(out, defaultBIAmbiguousRAPExtensions)
+
+	return out
+}
+
 // BIAmbiguousRAPOverrides returns extension overrides for the common
 // "fast + forced magic for ambiguous BI formats" scenario.
 func BIAmbiguousRAPOverrides() map[string]AnalyzePlan {
-	plans := make(map[string]AnalyzePlan, len(BIAmbiguousRAPExtensions))
-	for _, ext := range BIAmbiguousRAPExtensions {
+	extensions := BIAmbiguousRAPExtensions()
+	plans := make(map[string]AnalyzePlan, len(extensions))
+	for _, ext := range extensions {
 		plans[ext] = AnalyzePlan{
 			Match:    AnalyzeMatchExtensionMagic,
 			Validate: AnalyzeValidateNone,

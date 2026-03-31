@@ -170,6 +170,13 @@ func specializeByExtensionAndContent(
 			return record
 		}
 	}
+	if byExtensionRecord.typ.ID == "text.xml" &&
+		matchContentPatternForType("bi.ce.ceproject-config", prefix) {
+		record, ok := typeByID["bi.ce.ceproject-config"]
+		if ok {
+			return record
+		}
+	}
 
 	return byExtensionRecord
 }

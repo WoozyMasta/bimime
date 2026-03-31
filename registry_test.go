@@ -369,6 +369,18 @@ func TestProbeCfgWithoutCfgModelsStaysGeneric(t *testing.T) {
 	}
 }
 
+func TestProbeXMLWithZGConfigSpecialization(t *testing.T) {
+	t.Parallel()
+
+	result := Probe("custom-name.xml", []byte("<?xml version=\"1.0\"?><zg-config/>"))
+	if result.ByExtension.ID != "bi.ce.ceproject-config" {
+		t.Fatalf("ByExtension=%q want %q", result.ByExtension.ID, "bi.ce.ceproject-config")
+	}
+	if result.Resolved.ID != "bi.ce.ceproject-config" {
+		t.Fatalf("Resolved=%q want %q", result.Resolved.ID, "bi.ce.ceproject-config")
+	}
+}
+
 func TestLookupAndRegistry(t *testing.T) {
 	t.Parallel()
 

@@ -1085,6 +1085,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/xml",
 			Description: "CEProject zg-config map descriptor (ceproject-config.xml)",
 		},
+		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)<\s*zg-config\b`)},
 	},
 	{
 		typ: Type{

@@ -7,39 +7,72 @@ plus common modding files such as configs, scripts, assets,
 localization tables, project/workbench files,
 and diagnostics/crash artifacts.
 
-## Detection Modes
+## Detection Profiles
 
-* `fast` uses filename and extension only.
-* `normal` uses extension and magic when content is needed.
-* `strict` uses normal mode plus validation checks.
-* strict checks include extension/magic mismatch detection
-  for signature-based formats.
-* strict checks include quick text-likeness validation for text-like types.
+* fast: path/extension only, no content read.
+* normal: extension + magic when needed by plan/extension.
+* strict: normal + validation checks:
+  extension/magic mismatch, text-likeness, content patterns.
+
+## Advanced Plans
+
+* `Analyze` supports per-extension `AnalyzePlan` overrides.
+* Use `AnalyzeMatchExtensionMagic` for targeted forced magic probing
+  on selected extensions (for example `wrp`, `p3d`, `rvmat`, `bisurf`).
 
 ## Usage
 
 ```go
-mode, err := bimime.ParseDetectMode("strict")
-if err != nil {
-    return err
-}
-
 result, err := bimime.AnalyzeFile(
-    "config.rvmat",
-    bimime.AnalyzeOptions{Mode: mode},
+    bimime.BIAmbiguousRAPOptions("terrain.wrp", nil),
 )
 if err != nil {
     return err
 }
 
 fmt.Println(result.Probe.Resolved.ID)
-fmt.Println(result.Probe.Resolved.Description)
-fmt.Println(result.Valid)
+```
+
+Equivalent explicit options:
+
+```go
+result, err := bimime.AnalyzeFile(bimime.AnalyzeOptions{
+    Path: "terrain.wrp",
+    DefaultPlan:      bimime.PlanFast(),
+    PlansByExtension: bimime.BIAmbiguousRAPOverrides(),
+})
+if err != nil {
+    return err
+}
+
+fmt.Println(result.Probe.Resolved.ID)
+```
+
+```go
+result, err := bimime.AnalyzeFile(bimime.AnalyzeOptions{
+    Path: "x.png",
+    DefaultPlan: bimime.PlanNormal(),
+})
+if err != nil {
+    return err
+}
+
+result = bimime.Analyze(bimime.AnalyzeOptions{
+    Path:   "script.sqf",
+    Prefix: dataPrefix,
+    DefaultPlan: bimime.PlanNormal(),
+    PlansByExtension: map[string]bimime.AnalyzePlan{
+        "sqf": {
+            Match:    bimime.AnalyzeMatchExtensionMagicNeeded,
+            Validate: bimime.AnalyzeValidateStrict,
+        },
+    },
+})
 ```
 
 ## Behavior Notes
 
-* `NeedsContent` lets caller skip file reads in fast paths.
-* `AnalyzeReader` reads only a prefix buffer, not full file payload.
+* `NeedsContent` decides whether prefix bytes are required.
+* `AnalyzeReader` reads only a prefix, not whole payload.
 * `AnalyzeFile` opens file and reads only required prefix bytes.
 * `Probe` resolves type by extension and magic bytes.

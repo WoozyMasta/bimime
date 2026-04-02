@@ -505,6 +505,18 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 	},
 	{
 		typ: Type{
+			ID:          "bi.animation.aex",
+			MIME:        "text/x-bohemia-animation-expression-table",
+			Description: "Animation source expression/sync table text",
+			Extensions:  []string{"aex"},
+		},
+		contentPatterns: []*regexp.Regexp{
+			regexp.MustCompile(`(?i)\bAnimSrcExpressionTable\b`),
+			regexp.MustCompile(`(?i)\bAnimSrcSyncTable\b`),
+		},
+	},
+	{
+		typ: Type{
 			ID:          "bi.animation.adeb",
 			MIME:        "application/x-bohemia-adeb",
 			Description: "Animation debug stream, likely binary; magic unknown",
@@ -1181,6 +1193,14 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-smap",
 			Description: "Sound map data payload",
 			Extensions:  []string{"smap"},
+		},
+	},
+	{
+		typ: Type{
+			ID:          "bi.world.smd",
+			MIME:        "application/x-bohemia-smd",
+			Description: "Shore map data container (FORM/SMDF)",
+			Extensions:  []string{"smd"},
 		},
 	},
 	{

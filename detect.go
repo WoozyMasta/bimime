@@ -429,6 +429,8 @@ func detectFORMFamilyTypeID(prefix []byte) (string, bool) {
 		return "bi.package.pak", true
 	case prefix[8] == 'R' && prefix[9] == 'D' && prefix[10] == 'B' && prefix[11] == 'C':
 		return "bi.db.rdb", true
+	case prefix[8] == 'S' && prefix[9] == 'M' && prefix[10] == 'D' && prefix[11] == 'F':
+		return "bi.world.smd", true
 	case prefix[8] == 'F' && prefix[9] == 'N' && prefix[10] == 'T':
 		return "bi.font.fnt", true
 	case prefix[8] == 'X' && prefix[9] == 'O' && prefix[10] == 'B':

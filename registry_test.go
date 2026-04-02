@@ -185,6 +185,7 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "x.aw", id: "bi.animgraph.aw"},
 		{path: "x.agr", id: "bi.animgraph.agr"},
 		{path: "x.ae", id: "bi.animation.ae"},
+		{path: "x.aex", id: "bi.animation.aex"},
 		{path: "x.adeb", id: "bi.animation.adeb"},
 		{path: "x.pap", id: "bi.animation.pap"},
 		{path: "x.siga", id: "bi.animation.siga"},
@@ -226,6 +227,7 @@ func TestDetectByExtension(t *testing.T) {
 		{path: "x.et", id: "bi.world.et"},
 		{path: "x.layer", id: "bi.world.layer"},
 		{path: "x.smap", id: "bi.world.smap"},
+		{path: "x.smd", id: "bi.world.smd"},
 		{path: "x.topo", id: "bi.world.topo"},
 		{path: "x.asc", id: "bi.terrain.asc"},
 		{path: "x.desc", id: "bi.terrain.desc"},
@@ -264,6 +266,23 @@ func TestProbeMagicOverridesExtension(t *testing.T) {
 	}
 	if result.Resolved.ID != "bi.rvmat.bin" {
 		t.Fatalf("Probe resolved id = %q, want bi.rvmat.bin", result.Resolved.ID)
+	}
+}
+
+func TestProbeSMDFMagicFromUnknownExtension(t *testing.T) {
+	t.Parallel()
+
+	result := Probe("worlds/Arland/Arland.bin", []byte{
+		'F', 'O', 'R', 'M',
+		0x00, 0x00, 0x02, 0x14,
+		'S', 'M', 'D', 'F',
+		'V', 'E', 'R', 'S',
+	})
+	if result.ByMagic.ID != "bi.world.smd" {
+		t.Fatalf("Probe magic id = %q, want bi.world.smd", result.ByMagic.ID)
+	}
+	if result.Resolved.ID != "bi.world.smd" {
+		t.Fatalf("Probe resolved id = %q, want bi.world.smd", result.Resolved.ID)
 	}
 }
 

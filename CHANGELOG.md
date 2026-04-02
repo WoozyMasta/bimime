@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning][].
 ### Removed
 -->
 
+## [0.2.1][] - 2026-04-03
+
+### Added
+
+* `aex` and `smd` file support
+
+[0.2.1]: https://github.com/WoozyMasta/bimime/compare/v0.2.0...v0.2.1
+
 ## [0.2.0][] - 2026-04-01
 
 ### Added

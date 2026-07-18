@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning][].
 ### Removed
 -->
 
+## Unreleased
+
+### Changed
+
+* Breaking: replace plan and validation options with profile-based
+  classification results that preserve path and content evidence.
+
 ## [0.2.1][] - 2026-04-03
 
 ### Added

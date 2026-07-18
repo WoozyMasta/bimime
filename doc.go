@@ -3,20 +3,18 @@
 // Source: github.com/woozymasta/bimime
 
 /*
-Package bimime provides a unified registry of BI game file types with MIME
-names, descriptions, binary/text hints, extension/path matching, and
-magic-byte probing.
+Package bimime provides a built-in registry of BI game file types
+and bounded path/content classification.
 
-Use Analyze/AnalyzeReader/AnalyzeFile with AnalyzeOptions and AnalyzePlan:
-  - extension-only matching for fast path.
-  - extension+magic when content is needed.
-  - strict validation when consistency checks are required.
-  - extension-specific plan overrides for mixed corpora.
-  - fast + forced magic for ambiguous RAP-like extensions
-    via BIAmbiguousRAPOptions.
-  - Analyzer for repeated calls with reused normalized config.
+Classification uses three evidence-cost profiles.
 
-Magic-byte detection is considered more reliable than extension-only detection.
-Use Probe when both filename and payload prefix are available.
+  - [ProfileFast] uses path evidence only,
+  - [ProfileNormal] probes content only for useful refinements,
+  - [ProfileThorough] performs bounded content discovery and verification.
+
+Callers that own file or container storage can use RequiredPrefix and [Analyze] without I/O.
+[AnalyzeReader] and [AnalyzeFile] are convenience wrappers over the same classification rules.
+Results retain path evidence, content evidence, their relation, and any incomplete-probe flags;
+classification does not claim that a complete file was semantically validated.
 */
 package bimime

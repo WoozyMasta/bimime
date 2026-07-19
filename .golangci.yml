@@ -1,16 +1,15 @@
 version: "2"
 run:
   tests: false
+
 linters:
   enable:
     - modernize
     - prealloc
-    # - tagalign
     - tagliatelle
     - perfsprint
     - asciicheck
     - bidichk
-    # - gocognit # cyclop
     - decorder
     - dupl
     - gocritic
@@ -20,14 +19,13 @@ linters:
     - predeclared
     - revive
     - rowserrcheck
-    - sqlclosecheck
     - tparallel
     - unconvert
     - unparam
     - whitespace
     - staticcheck
-    - zerologlint
     - goheader
+
   exclusions:
     generated: lax
     presets:
@@ -36,6 +34,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+
   settings:
     goheader:
       template: |-
@@ -47,9 +46,11 @@ linters:
         rules:
           json: snake
           yaml: snake
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+
 formatters:
   enable:
     - goimports

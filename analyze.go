@@ -5,415 +5,313 @@
 package bimime
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
-	"unicode/utf8"
 )
 
-const defaultAnalyzePrefixSize = 4096
+const (
+	// thoroughPrefixSize covers the largest global binary probe, including DX10 EDDS.
+	thoroughPrefixSize = 156
+	// semanticPrefixSize bounds path-scoped text pattern probes.
+	semanticPrefixSize = 4096
+	// maxConsecutiveEmptyReads prevents broken readers from spinning forever.
+	maxConsecutiveEmptyReads = 100
+)
 
-// defaultMagicNeededExtensions marks ambiguous extension-only formats that
-// should read content in normal mode to disambiguate source vs binary payloads.
-var defaultMagicNeededExtensions = map[string]struct{}{
-	"p3d":    {},
-	"wrp":    {},
-	"rvmat":  {},
-	"bisurf": {},
-}
+// RequiredPrefix returns the total prefix length needed for the selected name
+// and profile. Fast always returns zero.
+func RequiredPrefix(name string, profile Profile) int {
+	validateProfile(profile)
 
-// Analyzer stores normalized analyze configuration for repeated calls.
-type Analyzer struct {
-	plansByExtension map[string]AnalyzePlan
-	prefixSize       int
-	defaultPlan      AnalyzePlan
-}
+	switch profile {
+	case ProfileFast:
+		return 0
 
-// NewAnalyzer builds analyzer from options and normalizes plan declarations.
-func NewAnalyzer(options AnalyzeOptions) Analyzer {
-	options = normalizeAnalyzeOptions(options)
+	case ProfileNormal:
+		if record, ok := detectByPathRecord(name); ok {
+			return record.normalPrefix
+		}
+		return 0
 
-	return Analyzer{
-		defaultPlan:      options.DefaultPlan,
-		plansByExtension: options.PlansByExtension,
-		prefixSize:       options.PrefixSize,
+	case ProfileThorough:
+		if record, ok := detectByPathRecord(name); ok {
+			for _, refinement := range pathPatternRefinements {
+				if record.typ.ID == refinement.pathType {
+					return semanticPrefixSize
+				}
+			}
+		}
+		return thoroughPrefixSize
+
+	default:
+		panic("unreachable profile")
 	}
 }
 
-// NeedsContent reports whether selected plan requires payload prefix bytes.
-func NeedsContent(options AnalyzeOptions) bool {
-	analyzer := NewAnalyzer(options)
-	return analyzer.NeedsContent(options.Path)
-}
-
-// HasMagic reports whether a registered type has at least one magic signature.
-func HasMagic(typeID string) bool {
-	return hasMagicForType(typeID)
-}
-
-// NeedsContent reports whether payload prefix is required for this path.
-func (analyzer Analyzer) NeedsContent(path string) bool {
-	path = trimPathSpace(path)
-	plan := analyzer.effectivePlan(path)
-
-	return needsContentForPlan(path, plan)
-}
-
-// Analyze classifies path/prefix pair according to analyzer plan.
-func (analyzer Analyzer) Analyze(path string, prefix []byte) AnalyzeResult {
-	path = trimPathSpace(path)
-	plan := analyzer.effectivePlan(path)
-	probe := probeForPlan(path, prefix, plan)
-
-	result := AnalyzeResult{
-		Plan:  plan,
-		Probe: probe,
-		Valid: true,
+// Analyze classifies a logical name and caller-owned prefix without performing I/O.
+func Analyze(name string, prefix []byte, profile Profile) Result {
+	required := RequiredPrefix(name, profile)
+	result := Result{Type: UnknownID, RequiredPrefix: required}
+	if len(prefix) < required {
+		result.Flags |= FlagIncomplete
 	}
 
-	if plan.Validate != AnalyzeValidateStrict {
+	pathRecord, hasPath := detectByPathRecord(name)
+	if hasPath {
+		result.ByPath = pathRecord.typ.ID
+		result.Type = pathRecord.typ.ID
+		result.Relation = RelationPathOnly
+	}
+
+	if profile == ProfileFast || len(prefix) == 0 {
+		if !hasPath {
+			result.Relation = RelationUnknown
+		}
 		return result
 	}
 
-	validateStrict(&result, prefix)
+	contentRecord, hasContent := detectByMagicRecord(prefix)
+	contentSource := ContentSourceMagic
+	if hasContent && isStructuredContentMatch(contentRecord.typ.ID, prefix) {
+		contentSource = ContentSourceStructure
+	}
+
+	if profile == ProfileNormal {
+		if !hasPath || required == 0 {
+			return result
+		}
+
+		if hasContent {
+			contentRecord = specializeRAPRecordForExtension(contentRecord, string(pathRecord.typ.ID))
+			if contentRecord.typ.Family != pathRecord.typ.Family {
+				hasContent = false
+			}
+		}
+	} else if hasPath && !hasContent {
+		if refined, ok := matchPathPattern(pathRecord, prefix); ok {
+			contentRecord = refined
+			hasContent = true
+			contentSource = ContentSourcePattern
+		}
+	}
+	if profile == ProfileThorough && hasPath && hasContent {
+		contentRecord = specializeRAPRecordForExtension(contentRecord, string(pathRecord.typ.ID))
+	}
+
+	if hasContent {
+		result.ByContent = contentRecord.typ.ID
+		result.ContentSource = contentSource
+	}
+	resolveEvidence(&result, pathRecord, hasPath, contentRecord, hasContent)
+
+	if profile == ProfileThorough && hasPath && !hasContent && len(prefix) >= required &&
+		hasContentVerifier(pathRecord) {
+		result.Flags |= FlagExpectedContentMissing
+	}
+
 	return result
 }
 
-// Analyze classifies path/prefix pair according to extension-aware plans.
-func Analyze(options AnalyzeOptions) AnalyzeResult {
-	analyzer := NewAnalyzer(options)
-	return analyzer.Analyze(options.Path, options.Prefix)
+// Probe performs thorough in-memory classification without reading external data.
+func Probe(name string, prefix []byte) Result {
+	return Analyze(name, prefix, ProfileThorough)
 }
 
-// AnalyzeReader classifies path using analyzer and optional reader.
-func (analyzer Analyzer) AnalyzeReader(path string, reader io.Reader) (AnalyzeResult, error) {
-	path = trimPathSpace(path)
-	if !analyzer.NeedsContent(path) {
-		return analyzer.Analyze(path, nil), nil
+// AnalyzeReader reads only the prefix planned for the selected profile.
+func AnalyzeReader(name string, reader io.Reader, profile Profile) (Result, error) {
+	required := RequiredPrefix(name, profile)
+	if required == 0 {
+		return Analyze(name, nil, profile), nil
 	}
 	if reader == nil {
-		return AnalyzeResult{}, ErrNilReader
+		return Result{}, ErrNilReader
 	}
 
-	prefix, err := readPrefix(reader, analyzer.prefixSize)
+	prefix, err := readPrefix(reader, required)
 	if err != nil {
-		return AnalyzeResult{}, fmt.Errorf("read content prefix: %w", err)
+		return Result{}, fmt.Errorf("read content prefix: %w", err)
 	}
 
-	return analyzer.Analyze(path, prefix), nil
+	return Analyze(name, prefix, profile), nil
 }
 
-// AnalyzeReader classifies path using selected plans and optional reader.
-func AnalyzeReader(reader io.Reader, options AnalyzeOptions) (AnalyzeResult, error) {
-	analyzer := NewAnalyzer(options)
-	return analyzer.AnalyzeReader(options.Path, reader)
-}
-
-// AnalyzeFile classifies file path and reads only required prefix bytes.
-func (analyzer Analyzer) AnalyzeFile(path string) (AnalyzeResult, error) {
-	path = trimPathSpace(path)
-	if !analyzer.NeedsContent(path) {
-		return analyzer.Analyze(path, nil), nil
+// AnalyzeFile opens the exact supplied path and reads only its planned prefix.
+func AnalyzeFile(path string, profile Profile) (Result, error) {
+	required := RequiredPrefix(path, profile)
+	if required == 0 {
+		return Analyze(path, nil, profile), nil
 	}
 
-	f, err := os.Open(path)
+	file, err := os.Open(path)
 	if err != nil {
-		return AnalyzeResult{}, fmt.Errorf("open file: %w", err)
+		return Result{}, fmt.Errorf("open file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { _ = file.Close() }()
 
-	return analyzer.AnalyzeReader(path, f)
+	return AnalyzeReader(path, file, profile)
 }
 
-// AnalyzeFile classifies file path and reads only required prefix bytes.
-func AnalyzeFile(options AnalyzeOptions) (AnalyzeResult, error) {
-	analyzer := NewAnalyzer(options)
-	return analyzer.AnalyzeFile(options.Path)
-}
-
-// normalizeAnalyzeOptions fills defaults and normalizes plan declarations.
-func normalizeAnalyzeOptions(options AnalyzeOptions) AnalyzeOptions {
-	if options.PrefixSize <= 0 {
-		options.PrefixSize = defaultAnalyzePrefixSize
-	}
-
-	options.DefaultPlan = normalizeAnalyzePlan(options.DefaultPlan)
-	options.PlansByExtension = normalizeExtensionPlans(options.PlansByExtension)
-	options.Path = trimPathSpace(options.Path)
-
-	return options
-}
-
-// normalizeAnalyzePlan normalizes zero/default values and invalid mixes.
-func normalizeAnalyzePlan(plan AnalyzePlan) AnalyzePlan {
-	if plan.Match == AnalyzeMatchDefault {
-		plan.Match = AnalyzeMatchExtensionMagicNeeded
-	}
-	if plan.Validate == AnalyzeValidateDefault {
-		plan.Validate = AnalyzeValidateNone
-	}
-	if plan.Validate == AnalyzeValidateStrict && plan.Match == AnalyzeMatchExtension {
-		plan.Match = AnalyzeMatchExtensionMagicNeeded
-	}
-
-	return plan
-}
-
-// normalizeExtensionPlans normalizes extension keys and plan values.
-func normalizeExtensionPlans(source map[string]AnalyzePlan) map[string]AnalyzePlan {
-	if len(source) == 0 {
-		return nil
-	}
-
-	out := make(map[string]AnalyzePlan, len(source))
-	for ext, plan := range source {
-		key := lowerKey(strings.TrimPrefix(strings.TrimSpace(ext), "."))
-		if key == "" {
-			continue
-		}
-
-		out[key] = normalizeAnalyzePlan(plan)
-	}
-
-	return out
-}
-
-// effectivePlanForPath returns extension-specific plan or normalized default.
-func (analyzer Analyzer) effectivePlan(path string) AnalyzePlan {
-	if len(analyzer.plansByExtension) == 0 {
-		return analyzer.defaultPlan
-	}
-
-	ext := extensionKey(path)
-	if ext != "" {
-		if plan, ok := analyzer.plansByExtension[ext]; ok {
-			return plan
-		}
-	}
-
-	return analyzer.defaultPlan
-}
-
-// needsContentForPlan reports whether plan requires payload prefix reads.
-func needsContentForPlan(path string, plan AnalyzePlan) bool {
-	if plan.Validate == AnalyzeValidateStrict {
-		return true
-	}
-
-	switch plan.Match {
-	case AnalyzeMatchExtension:
-		return false
-	case AnalyzeMatchExtensionMagic:
-		return true
-	case AnalyzeMatchExtensionMagicNeeded:
-		extension := extensionKey(path)
-		if _, ok := defaultMagicNeededExtensions[extension]; ok {
-			return true
-		}
-
-		byExtension, ok := detectByPathRecord(path)
-		if !ok {
-			return true
-		}
-
-		return len(byExtension.magic) > 0
-	default:
-		return true
+// validateProfile rejects enum values that are outside the public profile set.
+func validateProfile(profile Profile) {
+	if profile > ProfileThorough {
+		panic(fmt.Sprintf("bimime: invalid profile %d", profile))
 	}
 }
 
-// probeForPlan picks extension-only or extension+magic probing by plan.
-func probeForPlan(path string, prefix []byte, plan AnalyzePlan) ProbeResult {
-	if plan.Match == AnalyzeMatchExtension {
-		return extensionOnlyProbe(path)
-	}
-
-	return Probe(path, prefix)
-}
-
-// extensionOnlyProbe resolves type by path hint without payload magic checks.
-func extensionOnlyProbe(path string) ProbeResult {
-	extension := extensionKey(path)
-	byExtension, ok := detectByPathRecord(path)
-	if !ok {
-		return ProbeResult{
-			Source:      SourceUnknown,
-			Extension:   extension,
-			Resolved:    UnknownType(),
-			ByMagic:     UnknownType(),
-			ByExtension: UnknownType(),
-		}
-	}
-
-	byExtensionType := probeType(byExtension.typ)
-
-	return ProbeResult{
-		Source:      SourceExtension,
-		Extension:   extension,
-		Resolved:    byExtensionType,
-		ByMagic:     UnknownType(),
-		ByExtension: byExtensionType,
-	}
-}
-
-// validateStrict validates extension/magic consistency and text-like payloads.
-func validateStrict(result *AnalyzeResult, prefix []byte) {
-	if result == nil {
-		return
-	}
-	if len(prefix) == 0 {
-		result.Valid = false
-		result.Issues = append(result.Issues, AnalyzeIssueInsufficientContent)
-		return
-	}
-
-	if result.Probe.ByExtension.ID != UnknownType().ID && hasMagicForType(result.Probe.ByExtension.ID) {
-		result.CheckedMagic = true
-		if result.Probe.ByMagic.ID != result.Probe.ByExtension.ID {
-			result.Valid = false
-			result.Issues = append(result.Issues, AnalyzeIssueMagicMismatch)
-		}
-	}
-	if hasContentPatternForType(result.Probe.Resolved.ID) {
-		result.CheckedContentPattern = true
-		if !matchContentPatternForType(result.Probe.Resolved.ID, prefix) {
-			result.Valid = false
-			result.Issues = append(result.Issues, AnalyzeIssueContentPatternMismatch)
-		}
-	}
-
-	if result.Probe.Resolved.Binary {
-		return
-	}
-
-	result.CheckedText = true
-	result.LooksText = isLikelyText(prefix)
-	if !result.LooksText {
-		result.Valid = false
-		result.Issues = append(result.Issues, AnalyzeIssueTextExpected)
-	}
-}
-
-// hasMagicForType reports whether registry record has at least one signature.
-func hasMagicForType(typeID string) bool {
-	record, ok := typeByID[typeID]
-	if ok {
-		return len(record.magic) > 0
-	}
-
-	key := strings.ToLower(strings.TrimSpace(typeID))
-	record, ok = typeByID[key]
-	if !ok {
-		return false
-	}
-
-	return len(record.magic) > 0
-}
-
-// hasContentPatternForType reports whether type has at least one content regex.
-func hasContentPatternForType(typeID string) bool {
-	record, ok := typeByID[typeID]
-	if ok {
-		return len(record.contentPatterns) > 0
-	}
-
-	key := strings.ToLower(strings.TrimSpace(typeID))
-	record, ok = typeByID[key]
-	if !ok {
-		return false
-	}
-
-	return len(record.contentPatterns) > 0
-}
-
-// matchContentPatternForType reports whether payload matches any configured regex.
-func matchContentPatternForType(typeID string, prefix []byte) bool {
-	record, ok := typeByID[typeID]
-	if !ok {
-		key := strings.ToLower(strings.TrimSpace(typeID))
-		record, ok = typeByID[key]
-		if !ok {
-			return false
-		}
-	}
-	if len(record.contentPatterns) == 0 {
-		return true
-	}
-	for _, pattern := range record.contentPatterns {
-		if pattern.Match(prefix) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// readPrefix reads at most limit bytes from reader and tolerates short inputs.
+// readPrefix allocates the planned bound once and detects readers that stop making progress.
 func readPrefix(reader io.Reader, limit int) ([]byte, error) {
-	if limit <= 0 {
-		return nil, nil
-	}
+	buf := make([]byte, limit)
+	read := 0
+	emptyReads := 0
 
-	initialCap := min(limit, 256)
+	for read < limit {
+		n, err := reader.Read(buf[read:])
+		read += n
+		if err != nil {
+			if err == io.EOF {
+				return buf[:read], nil
+			}
 
-	buf := make([]byte, 0, initialCap)
-	var tmp [256]byte
-	for len(buf) < limit {
-		chunk := min(limit-len(buf), len(tmp))
-
-		n, err := reader.Read(tmp[:chunk])
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
+			return nil, err
 		}
-		if err == nil {
+
+		if n == 0 {
+			emptyReads++
+			if emptyReads >= maxConsecutiveEmptyReads {
+				return nil, io.ErrNoProgress
+			}
+
 			continue
 		}
-		if errors.Is(err, io.EOF) {
-			return buf, nil
-		}
 
-		return nil, err
+		emptyReads = 0
 	}
 
 	return buf, nil
 }
 
-// isLikelyText reports whether data is likely plain text.
-func isLikelyText(data []byte) bool {
-	if len(data) == 0 {
-		return true
-	}
-	if bytes.IndexByte(data, 0) >= 0 {
-		return false
-	}
-
-	if utf8.Valid(data) {
-		for len(data) > 0 {
-			r, size := utf8.DecodeRune(data)
-			data = data[size:]
-
-			if r == '\n' || r == '\r' || r == '\t' {
-				continue
-			}
-			if r < 0x20 {
-				return false
-			}
-		}
-
-		return true
-	}
-
-	for _, b := range data {
-		if b == '\n' || b == '\r' || b == '\t' {
+// matchPathPattern returns a registered semantic refinement for a path type.
+func matchPathPattern(pathRecord registryRecord, prefix []byte) (registryRecord, bool) {
+	for _, refinement := range pathPatternRefinements {
+		if pathRecord.typ.ID != refinement.pathType ||
+			!matchContentPatternForType(string(refinement.targetType), prefix) {
 			continue
 		}
-		if b < 0x20 {
-			return false
+
+		record, ok := typeByID[string(refinement.targetType)]
+		if ok {
+			return record, true
 		}
 	}
 
-	return true
+	return registryRecord{}, false
+}
+
+// resolveEvidence selects the final type and relation from path/content evidence.
+func resolveEvidence(
+	result *Result,
+	pathRecord registryRecord,
+	hasPath bool,
+	contentRecord registryRecord,
+	hasContent bool,
+) {
+	switch {
+	case !hasPath && !hasContent:
+		result.Type = UnknownID
+		result.Relation = RelationUnknown
+
+	case hasPath && !hasContent:
+		result.Type = pathRecord.typ.ID
+		result.Relation = RelationPathOnly
+
+	case !hasPath && hasContent:
+		result.Type = contentRecord.typ.ID
+		result.Relation = RelationContentOnly
+
+	case pathRecord.typ.ID == contentRecord.typ.ID:
+		result.Type = pathRecord.typ.ID
+		result.Relation = RelationConfirmed
+
+	case pathRecord.typ.Family == contentRecord.typ.Family &&
+		pathRecord.specificity != contentRecord.specificity:
+		if pathRecord.specificity > contentRecord.specificity {
+			result.Type = pathRecord.typ.ID
+		} else {
+			result.Type = contentRecord.typ.ID
+		}
+		result.Relation = RelationRefined
+
+	case pathRecord.typ.Family == contentRecord.typ.Family:
+		result.Type = contentRecord.typ.ID
+		result.Relation = RelationConflict
+
+	default:
+		result.Type = contentRecord.typ.ID
+		result.Relation = RelationConflict
+	}
+}
+
+// hasContentVerifier reports whether a path type has a registered content probe.
+func hasContentVerifier(pathRecord registryRecord) bool {
+	if len(pathRecord.magic) > 0 {
+		return true
+	}
+
+	for key := range contextualRefinements {
+		if key.pathType == pathRecord.typ.ID {
+			return true
+		}
+	}
+	for _, record := range registryRecords {
+		if record.typ.Family == pathRecord.typ.Family && len(record.magic) > 0 {
+			return true
+		}
+	}
+
+	switch pathRecord.typ.ID {
+	case
+		"audio.mp3",
+		"audio.wav",
+		"image.webp",
+		"image.dds",
+		"image.edds",
+		"video.mp4",
+		"bi.package.pak",
+		"bi.db.rdb",
+		"bi.world.smd",
+		"bi.font.fnt",
+		"bi.animation.anm",
+		"bi.object.xob":
+		return true
+
+	default:
+		return false
+	}
+}
+
+// isStructuredContentMatch identifies detections implemented by structural probes.
+func isStructuredContentMatch(typeID TypeID, prefix []byte) bool {
+	if typeID == "audio.mp3" && len(prefix) >= 3 && string(prefix[:3]) == "ID3" {
+		return false
+	}
+	switch typeID {
+	case
+		"audio.mp3",
+		"audio.wav",
+		"image.webp",
+		"image.dds",
+		"image.edds",
+		"video.mp4",
+		"bi.package.pak",
+		"bi.db.rdb",
+		"bi.world.smd",
+		"bi.font.fnt",
+		"bi.animation.anm",
+		"bi.object.xob":
+		return true
+
+	default:
+		return false
+	}
 }

@@ -11,32 +11,6 @@ import (
 	"unicode/utf8"
 )
 
-// forceTextTypeIDs marks custom MIME ids that should be treated as text.
-var forceTextTypeIDs = map[string]struct{}{
-	"bi.ui.layout":       {},
-	"bi.ui.imageset":     {},
-	"bi.ui.styles":       {},
-	"bi.animgraph.ast":   {},
-	"bi.animgraph.asi":   {},
-	"bi.animgraph.asy":   {},
-	"bi.animgraph.aw":    {},
-	"bi.animgraph.agr":   {},
-	"bi.emat":            {},
-	"bi.effects.ptc":     {},
-	"bi.meta":            {},
-	"bi.font.fsdf":       {},
-	"bi.project.gproj":   {},
-	"bi.project.sproj":   {},
-	"bi.project.ssln":    {},
-	"bi.config.main.cpp": {},
-	"bi.mod.cpp":         {},
-	"bi.model.cfg":       {},
-	"image.svg":          {},
-	"model.obj":          {},
-	"model.dae":          {},
-	"model.gltf":         {},
-}
-
 const maxShortDescriptionLen = 60
 
 // filePrefixRecord stores one filename-prefix mapping to a type id.
@@ -51,11 +25,43 @@ type fileSuffixRecord struct {
 	typeID string
 }
 
-// filePrefixRecords stores prefix mappings in stable matching order.
-var filePrefixRecords = buildFilePrefixRecords(typeIDByFilePrefix)
+// contextualRefinementKey identifies a path and content pair that refines to a
+// format-specific type.
+type contextualRefinementKey struct {
+	// pathType is the type inferred from the logical name.
+	pathType TypeID
+	// contentType is the generic type inferred from the content.
+	contentType TypeID
+}
 
-// fileSuffixRecords stores suffix mappings in stable matching order.
-var fileSuffixRecords = buildFileSuffixRecords(typeIDByFileSuffix)
+// contextualRefinements maps contextual format evidence to its specialized type.
+var contextualRefinements = map[contextualRefinementKey]TypeID{
+	{pathType: "bi.config.main.bin", contentType: "bi.rap"}: "bi.config.main.bin",
+	{pathType: "bi.mod.bin", contentType: "bi.rap"}:         "bi.mod.bin",
+	{pathType: "bi.rvmat", contentType: "bi.rap"}:           "bi.rvmat.bin",
+	{pathType: "bi.surface.bisurf", contentType: "bi.rap"}:  "bi.surface.bisurf.bin",
+}
+
+// pathPatternRefinement identifies a path-scoped pattern that specializes a
+// generic path type.
+type pathPatternRefinement struct {
+	// pathType is the generic type inferred from the logical name.
+	pathType TypeID
+	// targetType is selected when its registered pattern matches.
+	targetType TypeID
+}
+
+// pathPatternRefinements declares path-scoped semantic content specializations.
+var pathPatternRefinements = []pathPatternRefinement{
+	{pathType: "text.cfg", targetType: "bi.model.cfg"},
+	{pathType: "text.xml", targetType: "bi.ce.ceproject-config"},
+}
+
+// filePrefixRecords stores validated prefix mappings in stable matching order.
+var filePrefixRecords = builtinRegistry.filePrefixes
+
+// fileSuffixRecords stores validated suffix mappings in stable matching order.
+var fileSuffixRecords = builtinRegistry.fileSuffixes
 
 // Registry returns all registered game types.
 func Registry() []Type {
@@ -68,8 +74,8 @@ func Registry() []Type {
 }
 
 // Lookup finds one type by stable id.
-func Lookup(id string) (Type, bool) {
-	record, ok := typeByID[strings.ToLower(strings.TrimSpace(id))]
+func Lookup(id TypeID) (Type, bool) {
+	record, ok := typeByID[strings.ToLower(strings.TrimSpace(string(id)))]
 	if !ok {
 		return UnknownType(), false
 	}
@@ -77,134 +83,22 @@ func Lookup(id string) (Type, bool) {
 	return cloneType(record.typ), true
 }
 
-// Detect returns final resolved type for given filename and payload prefix.
-func Detect(path string, prefix []byte) Type {
-	return Probe(path, prefix).Resolved
-}
-
-// Probe resolves by both path hint and magic; magic match has priority.
-func Probe(path string, prefix []byte) ProbeResult {
-	extension := extensionKey(path)
-	byExtensionRecord, okExtension := detectByPathRecordWithExtension(path, extension)
-	if okExtension {
-		byExtensionRecord = specializeByExtensionAndContent(byExtensionRecord, prefix)
-	}
-
-	byMagicRecord, okMagic := detectByMagicRecord(prefix)
-
-	result := ProbeResult{
-		Resolved:    UnknownType(),
-		ByMagic:     UnknownType(),
-		ByExtension: UnknownType(),
-		Source:      SourceUnknown,
-		Extension:   extension,
-	}
-
-	if okExtension {
-		result.ByExtension = probeType(byExtensionRecord.typ)
-	}
-	if okMagic {
-		if okExtension {
-			byMagicRecord = specializeRAPRecordForExtension(byMagicRecord, byExtensionRecord.typ.ID)
-		}
-
-		result.ByMagic = probeType(byMagicRecord.typ)
-	}
-
-	switch {
-	case okMagic && okExtension:
-		if shouldPreferExtension(byExtensionRecord.typ.ID, byMagicRecord.typ.ID, prefix) {
-			result.Resolved = result.ByExtension
-		} else {
-			result.Resolved = result.ByMagic
-		}
-		result.Source = SourceMagicAndExtension
-	case okMagic:
-		result.Resolved = result.ByMagic
-		result.Source = SourceMagic
-	case okExtension:
-		result.Resolved = result.ByExtension
-		result.Source = SourceExtension
-	}
-
-	return result
-}
-
-// specializeRAPRecordForExtension maps generic RAP match to known extension-specific
-// RAP-like bins when path hint is available.
+// specializeRAPRecordForExtension applies a registered contextual refinement.
 func specializeRAPRecordForExtension(byMagicRecord registryRecord, byExtensionID string) registryRecord {
-	if byMagicRecord.typ.ID != "bi.rap" {
+	targetID, ok := contextualRefinements[contextualRefinementKey{
+		pathType:    TypeID(byExtensionID),
+		contentType: byMagicRecord.typ.ID,
+	}]
+	if !ok {
 		return byMagicRecord
 	}
 
-	var targetID string
-	switch byExtensionID {
-	case "bi.config.main.bin", "bi.mod.bin":
-		targetID = byExtensionID
-	case "bi.rvmat":
-		targetID = "bi.rvmat.bin"
-	case "bi.surface.bisurf":
-		targetID = "bi.surface.bisurf.bin"
-	default:
-		return byMagicRecord
-	}
-
-	record, ok := typeByID[targetID]
+	record, ok := typeByID[string(targetID)]
 	if !ok {
 		return byMagicRecord
 	}
 
 	return record
-}
-
-// specializeByExtensionAndContent refines extension match by lightweight
-// content hints for known ambiguous text formats.
-func specializeByExtensionAndContent(
-	byExtensionRecord registryRecord,
-	prefix []byte,
-) registryRecord {
-	if byExtensionRecord.typ.ID == "text.cfg" &&
-		matchContentPatternForType("bi.model.cfg", prefix) {
-		record, ok := typeByID["bi.model.cfg"]
-		if ok {
-			return record
-		}
-	}
-	if byExtensionRecord.typ.ID == "text.xml" &&
-		matchContentPatternForType("bi.ce.ceproject-config", prefix) {
-		record, ok := typeByID["bi.ce.ceproject-config"]
-		if ok {
-			return record
-		}
-	}
-
-	return byExtensionRecord
-}
-
-// DetectByExtension resolves type by path hint only (well-known filename/extension).
-func DetectByExtension(path string) (Type, bool) {
-	record, ok := detectByPathRecordWithExtension(path, extensionKey(path))
-	if !ok {
-		return UnknownType(), false
-	}
-
-	return cloneType(record.typ), true
-}
-
-// DetectByMagic resolves type only by payload magic bytes.
-func DetectByMagic(prefix []byte) (Type, bool) {
-	record, ok := detectByMagicRecord(prefix)
-	if !ok {
-		return UnknownType(), false
-	}
-
-	return cloneType(record.typ), true
-}
-
-// IsRAP reports whether payload starts with RAP magic bytes.
-func IsRAP(prefix []byte) bool {
-	record, ok := detectByMagicRecord(prefix)
-	return ok && record.typ.ID == "bi.rap"
 }
 
 // normalizeRegistryRecords returns a copied registry with normalized metadata fields.
@@ -213,11 +107,13 @@ func normalizeRegistryRecords(records []registryRecord) []registryRecord {
 	copy(out, records)
 
 	for i := range out {
+		if out[i].typ.Family == "" {
+			out[i].typ.Family = FamilyID(out[i].typ.ID)
+		}
 		out[i].typ.ShortDescription = normalizeShortDescription(
 			out[i].typ.ShortDescription,
 			out[i].typ.Description,
 		)
-		out[i].typ.Binary = inferBinaryByType(out[i].typ)
 	}
 
 	return out
@@ -257,22 +153,19 @@ func normalizeShortDescription(shortDescription string, description string) stri
 	return string(runes[:maxShortDescriptionLen-3]) + "..."
 }
 
-// inferBinaryByType infers binary/text hint from MIME and known type ids.
-func inferBinaryByType(typ Type) bool {
-	id := strings.ToLower(strings.TrimSpace(typ.ID))
-	mime := strings.ToLower(strings.TrimSpace(typ.MIME))
-
-	if _, ok := forceTextTypeIDs[id]; ok {
+// matchContentPatternForType reports whether any registered pattern matches a prefix.
+func matchContentPatternForType(typeID string, prefix []byte) bool {
+	record, ok := typeByID[lowerKey(strings.TrimSpace(typeID))]
+	if !ok || len(record.contentPatterns) == 0 {
 		return false
 	}
-	if strings.HasPrefix(mime, "text/") {
-		return false
-	}
-	if mime == "application/json" || mime == "application/xml" {
-		return false
+	for _, pattern := range record.contentPatterns {
+		if pattern.Match(prefix) {
+			return true
+		}
 	}
 
-	return true
+	return false
 }
 
 // detectByPathRecord resolves by known filename first, then by extension.
@@ -280,8 +173,8 @@ func detectByPathRecord(path string) (registryRecord, bool) {
 	return detectByPathRecordWithExtension(path, extensionKey(path))
 }
 
-// detectByPathRecordWithExtension resolves by known filename first, then by
-// precomputed extension key.
+// detectByPathRecordWithExtension resolves by known filename first,
+// then by precomputed extension key.
 func detectByPathRecordWithExtension(path string, extension string) (registryRecord, bool) {
 	fileName := fileNameKey(path)
 	if typeID, ok := typeIDByFileName[fileName]; ok {
@@ -290,6 +183,7 @@ func detectByPathRecordWithExtension(path string, extension string) (registryRec
 			return record, true
 		}
 	}
+
 	for _, prefixRecord := range filePrefixRecords {
 		if !strings.HasPrefix(fileName, prefixRecord.prefix) {
 			continue
@@ -302,6 +196,7 @@ func detectByPathRecordWithExtension(path string, extension string) (registryRec
 
 		return record, true
 	}
+
 	for _, suffixRecord := range fileSuffixRecords {
 		if !strings.HasSuffix(fileName, suffixRecord.suffix) {
 			continue
@@ -316,21 +211,6 @@ func detectByPathRecordWithExtension(path string, extension string) (registryRec
 	}
 
 	return detectByExtensionKeyRecord(extension)
-}
-
-// shouldPreferExtension resolves known ambiguous cases where magic is insufficient.
-func shouldPreferExtension(byExtensionID string, byMagicID string, prefix []byte) bool {
-	if byExtensionID == "image.edds" && byMagicID == "image.dds" && !canDisambiguateEDDS(prefix) {
-		return true
-	}
-	if byMagicID == "bi.rap" {
-		switch byExtensionID {
-		case "bi.config.main.bin", "bi.mod.bin":
-			return true
-		}
-	}
-
-	return false
 }
 
 // detectByExtensionKeyRecord resolves type by already-normalized extension key.
@@ -349,7 +229,6 @@ func detectByExtensionKeyRecord(extension string) (registryRecord, bool) {
 
 // fileNameKey returns normalized file basename for path-based lookup.
 func fileNameKey(path string) string {
-	path = trimPathSpace(path)
 	if path == "" {
 		return ""
 	}
@@ -427,14 +306,19 @@ func detectFORMFamilyTypeID(prefix []byte) (string, bool) {
 	switch {
 	case prefix[8] == 'P' && prefix[9] == 'A' && prefix[10] == 'C' && prefix[11] == '1':
 		return "bi.package.pak", true
+
 	case prefix[8] == 'R' && prefix[9] == 'D' && prefix[10] == 'B' && prefix[11] == 'C':
 		return "bi.db.rdb", true
+
 	case prefix[8] == 'S' && prefix[9] == 'M' && prefix[10] == 'D' && prefix[11] == 'F':
 		return "bi.world.smd", true
+
 	case prefix[8] == 'F' && prefix[9] == 'N' && prefix[10] == 'T':
 		return "bi.font.fnt", true
+
 	case prefix[8] == 'X' && prefix[9] == 'O' && prefix[10] == 'B':
 		return "bi.object.xob", true
+
 	case prefix[8] == 'A' && prefix[9] == 'N' && prefix[10] == 'I' && prefix[11] == 'M':
 		if len(prefix) < 16 {
 			return "", false
@@ -460,6 +344,7 @@ func detectRIFFFamilyTypeID(prefix []byte) (string, bool) {
 	switch {
 	case prefix[8] == 'W' && prefix[9] == 'A' && prefix[10] == 'V' && prefix[11] == 'E':
 		return "audio.wav", true
+
 	case prefix[8] == 'W' && prefix[9] == 'E' && prefix[10] == 'B' && prefix[11] == 'P':
 		return "image.webp", true
 	}
@@ -475,6 +360,7 @@ func detectMP4TypeID(prefix []byte) (string, bool) {
 	if prefix[4] != 'f' || prefix[5] != 't' || prefix[6] != 'y' || prefix[7] != 'p' {
 		return "", false
 	}
+
 	switch {
 	case prefix[8] == 'i' && prefix[9] == 's' && prefix[10] == 'o' && prefix[11] == 'm':
 	case prefix[8] == 'i' && prefix[9] == 's' && prefix[10] == 'o' && prefix[11] == '2':
@@ -497,10 +383,18 @@ func detectMP4TypeID(prefix []byte) (string, bool) {
 
 // detectMP3TypeID detects MP3 stream headers without ID3 tag.
 func detectMP3TypeID(prefix []byte) (string, bool) {
-	if len(prefix) < 2 {
+	if len(prefix) < 4 {
 		return "", false
 	}
 	if prefix[0] != 0xFF || (prefix[1]&0xE0) != 0xE0 {
+		return "", false
+	}
+
+	version := (prefix[1] >> 3) & 0x03
+	layer := (prefix[1] >> 1) & 0x03
+	bitrate := (prefix[2] >> 4) & 0x0F
+	sampleRate := (prefix[2] >> 2) & 0x03
+	if version == 0x01 || layer == 0 || bitrate == 0 || bitrate == 0x0F || sampleRate == 0x03 {
 		return "", false
 	}
 
@@ -538,12 +432,6 @@ func isEDDSPrefix(prefix []byte) bool {
 	return size <= 0x7FFFFFFF
 }
 
-// canDisambiguateEDDS reports whether prefix is long enough to tell DDS from EDDS.
-func canDisambiguateEDDS(prefix []byte) bool {
-	_, ok := eddsBlockTableOffset(prefix)
-	return ok
-}
-
 // eddsBlockTableOffset returns first block-table offset and whether it is readable.
 func eddsBlockTableOffset(prefix []byte) (int, bool) {
 	if len(prefix) < 4 {
@@ -578,6 +466,7 @@ func isEddsBlockMagic(data []byte) bool {
 	if len(data) < 4 {
 		return false
 	}
+
 	if data[0] == 'C' && data[1] == 'O' && data[2] == 'P' && data[3] == 'Y' {
 		return true
 	}
@@ -590,7 +479,6 @@ func isEddsBlockMagic(data []byte) bool {
 
 // extensionKey returns normalized extension without leading dot.
 func extensionKey(path string) string {
-	path = trimPathSpace(path)
 	if path == "" {
 		return ""
 	}
@@ -610,18 +498,6 @@ func extensionKey(path string) string {
 	}
 
 	return lowerKey(path[dot+1:])
-}
-
-// trimPathSpace trims surrounding spaces only when needed.
-func trimPathSpace(path string) string {
-	if path == "" {
-		return ""
-	}
-	if path[0] > ' ' && path[len(path)-1] > ' ' {
-		return path
-	}
-
-	return strings.TrimSpace(path)
 }
 
 // baseIndex returns basename start index for both slash and backslash paths.
@@ -653,6 +529,7 @@ func lowerKey(value string) string {
 			break
 		}
 	}
+
 	if !hasUpper && !hasNonASCII {
 		return value
 	}
@@ -670,119 +547,6 @@ func lowerKey(value string) string {
 	return string(buf)
 }
 
-// buildTypeByID builds type index by stable id and skips invalid duplicates.
-func buildTypeByID(records []registryRecord) map[string]registryRecord {
-	index := make(map[string]registryRecord, len(records))
-	for _, record := range records {
-		key := strings.ToLower(strings.TrimSpace(record.typ.ID))
-		if key == "" {
-			continue
-		}
-		if _, exists := index[key]; exists {
-			continue
-		}
-
-		index[key] = record
-	}
-
-	return index
-}
-
-// buildFilePrefixRecords builds stable filename-prefix matcher list.
-func buildFilePrefixRecords(source map[string]string) []filePrefixRecord {
-	keys := buildFileKeyRecords(source)
-	records := make([]filePrefixRecord, 0, len(keys))
-	for _, key := range keys {
-		records = append(records, filePrefixRecord{
-			prefix: key.key,
-			typeID: key.typeID,
-		})
-	}
-
-	return records
-}
-
-// buildFileSuffixRecords builds stable filename-suffix matcher list.
-func buildFileSuffixRecords(source map[string]string) []fileSuffixRecord {
-	keys := buildFileKeyRecords(source)
-	records := make([]fileSuffixRecord, 0, len(keys))
-	for _, key := range keys {
-		records = append(records, fileSuffixRecord{
-			suffix: key.key,
-			typeID: key.typeID,
-		})
-	}
-
-	return records
-}
-
-// fileKeyRecord stores normalized key->type mapping for prefix/suffix indexes.
-type fileKeyRecord struct {
-	key    string
-	typeID string
-}
-
-// buildFileKeyRecords builds stable normalized filename key records.
-func buildFileKeyRecords(source map[string]string) []fileKeyRecord {
-	records := make([]fileKeyRecord, 0, len(source))
-	seen := make(map[string]struct{}, len(source))
-
-	for rawKey, typeID := range source {
-		key := lowerKey(strings.TrimSpace(rawKey))
-		keyTypeID := lowerKey(strings.TrimSpace(typeID))
-
-		if key == "" {
-			continue
-		}
-		if keyTypeID == "" {
-			continue
-		}
-		if _, exists := seen[key]; exists {
-			continue
-		}
-
-		records = append(records, fileKeyRecord{
-			key:    key,
-			typeID: keyTypeID,
-		})
-		seen[key] = struct{}{}
-	}
-
-	slices.SortFunc(records, func(a, b fileKeyRecord) int {
-		if len(a.key) > len(b.key) {
-			return -1
-		}
-		if len(a.key) < len(b.key) {
-			return 1
-		}
-
-		return strings.Compare(a.key, b.key)
-	})
-
-	return records
-}
-
-// buildTypeByExtension builds extension index and skips invalid duplicates.
-func buildTypeByExtension(records []registryRecord) map[string]registryRecord {
-	index := make(map[string]registryRecord, len(records))
-	for _, record := range records {
-		for _, ext := range record.typ.Extensions {
-			key := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
-
-			if key == "" {
-				continue
-			}
-			if _, exists := index[key]; exists {
-				continue
-			}
-
-			index[key] = record
-		}
-	}
-
-	return index
-}
-
 // buildMagicIndex flattens and sorts signatures by descending length.
 func buildMagicIndex(records []registryRecord) []magicMatch {
 	flat := make([]magicMatch, 0, 32)
@@ -798,7 +562,7 @@ func buildMagicIndex(records []registryRecord) []magicMatch {
 
 			copied := make([]byte, len(signature))
 			copy(copied, signature)
-			flat = append(flat, magicMatch{signature: copied, typeID: strings.ToLower(record.typ.ID)})
+			flat = append(flat, magicMatch{signature: copied, typeID: strings.ToLower(string(record.typ.ID))})
 		}
 	}
 
@@ -814,14 +578,6 @@ func buildMagicIndex(records []registryRecord) []magicMatch {
 	})
 
 	return flat
-}
-
-// probeType returns lightweight type snapshot without extension list allocations.
-func probeType(typ Type) Type {
-	out := typ
-	out.Extensions = nil
-
-	return out
 }
 
 // cloneType deep-copies type metadata to protect internal registry slices.

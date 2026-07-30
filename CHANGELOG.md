@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning][].
 
 * Breaking: replace plan and validation options with profile-based
   classification results that preserve path and content evidence.
+* Registry types now declare text/binary traits and compatible refinement
+  families explicitly; contextual and pattern refinements are table-driven.
 
 ## [0.2.1][] - 2026-04-03
 

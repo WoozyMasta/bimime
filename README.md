@@ -1,94 +1,74 @@
 # bimime
 
-`bimime` is a Go package for detecting Bi ecosystem file types
-by path hint, magic bytes, and lightweight text checks.
-It covers Real Virtuality and Enfusion engine formats,
-plus common modding files such as configs, scripts, assets,
-localization tables, project/workbench files,
-and diagnostics/crash artifacts.
+`bimime` classifies BI game file types
+from logical names and bounded content prefixes.
+The package uses the same analysis rules for filesystem files,
+readers, memory buffers, and archive entries.
 
-## Detection Profiles
+## Profiles
 
-* fast: path/extension only, no content read.
-* normal: extension + magic when needed by plan/extension.
-* strict: normal + validation checks:
-  extension/magic mismatch, text-likeness, content patterns.
+Profiles set the evidence and I/O budget. They do not validate complete files.
 
-## Advanced Plans
+* `ProfileFast` uses path evidence only and requires no content reads.
+* `ProfileNormal` reads only for useful refinements of ambiguous BI types.
+* `ProfileThorough` enables bounded content discovery and path-scoped patterns.
 
-* `Analyze` supports per-extension `AnalyzePlan` overrides.
-* Use `AnalyzeMatchExtensionMagic` for targeted forced magic probing
-  on selected extensions (for example `wrp`, `p3d`, `rvmat`, `bisurf`).
-* For batch processing, prefer `Analyzer` to reuse normalized config.
+## Filesystem
 
-## Usage
+Use `AnalyzeFile` when the package should open the path
+and read its planned prefix:
 
 ```go
-result, err := bimime.AnalyzeFile(
-    bimime.BIAmbiguousRAPOptions("terrain.wrp", nil),
-)
+result, err := bimime.AnalyzeFile("terrain.wrp", bimime.ProfileNormal)
 if err != nil {
     return err
 }
 
-fmt.Println(result.Probe.Resolved.ID)
+fmt.Println(result.Type, result.Relation)
 ```
 
-```go
-analyzer := bimime.NewAnalyzer(bimime.AnalyzeOptions{
-    DefaultPlan:      bimime.PlanFast(),
-    PlansByExtension: bimime.BIAmbiguousRAPOverrides(),
-})
+## Caller-owned storage
 
-result, err := analyzer.AnalyzeFile("terrain.wrp")
+Use `RequiredPrefix` and `Analyze`
+when the caller owns file, archive, or memory storage.
+`RequiredPrefix` is the total prefix length from offset zero.
+
+```go
+size := bimime.RequiredPrefix(entry.Name, bimime.ProfileNormal)
+prefix, err := entry.ReadPrefix(size)
 if err != nil {
     return err
 }
 
-fmt.Println(result.Probe.Resolved.ID)
+result := bimime.Analyze(entry.Name, prefix, bimime.ProfileNormal)
 ```
 
-Equivalent explicit options:
+`ProfileFast` always returns zero.
+`ProfileNormal` requests content for
+ambiguous P3D, WRP, RVMat, and BISurf classifications.
+`ProfileThorough` uses a bounded global binary prefix
+and requests a larger sample only for registered path-scoped text refinements.
+
+## Results and registry
+
+`Result` keeps the final `TypeID`, path and content evidence, their relation,
+the content probe source, planned prefix length, and completeness flags.
+A conflict does not imply full-file validation;
+consumers can decide how to handle `RelationConflict`.
+
+`Lookup` and `Registry` return safe copies of type descriptors.
+Consumers can key their own policy by `TypeID`
+or use neutral `FamilyID` and `Trait` values:
 
 ```go
-result, err := bimime.AnalyzeFile(bimime.AnalyzeOptions{
-    Path: "terrain.wrp",
-    DefaultPlan:      bimime.PlanFast(),
-    PlansByExtension: bimime.BIAmbiguousRAPOverrides(),
-})
-if err != nil {
-    return err
+var compressionHint = map[bimime.TypeID]bool{
+    "text.sqf": true,
+    "audio.ogg": false,
 }
 
-fmt.Println(result.Probe.Resolved.ID)
+_ = compressionHint[result.Type]
 ```
 
-```go
-result, err := bimime.AnalyzeFile(bimime.AnalyzeOptions{
-    Path: "x.png",
-    DefaultPlan: bimime.PlanNormal(),
-})
-if err != nil {
-    return err
-}
-
-result = bimime.Analyze(bimime.AnalyzeOptions{
-    Path:   "script.sqf",
-    Prefix: dataPrefix,
-    DefaultPlan: bimime.PlanNormal(),
-    PlansByExtension: map[string]bimime.AnalyzePlan{
-        "sqf": {
-            Match:    bimime.AnalyzeMatchExtensionMagicNeeded,
-            Validate: bimime.AnalyzeValidateStrict,
-        },
-    },
-})
-```
-
-## Behavior Notes
-
-* `NeedsContent` decides whether prefix bytes are required.
-* `AnalyzeReader` reads only a prefix, not whole payload.
-* `AnalyzeFile` opens file and reads only required prefix bytes.
-* `Probe` resolves type by extension and magic bytes.
-* `strict` without payload prefix returns `insufficient_content`.
+The package describes file identity and objective traits.
+Consumer-specific policy such as compression decisions
+belongs in the consuming package.

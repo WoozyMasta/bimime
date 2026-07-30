@@ -1,386 +1,196 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 WoozyMasta
+// Source: github.com/woozymasta/bimime
+
 package bimime
 
 import (
+	"errors"
 	"io"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 )
 
+// countingReader tracks bytes and calls while serving predefined input.
 type countingReader struct {
-	data  []byte
-	index int
-	reads int
+	// data is the input returned by Read.
+	data []byte
+	// offset is the next unread byte.
+	offset int
+	// calls counts calls to Read.
+	calls int
 }
 
-// Read tracks read calls while serving predefined data.
-func (r *countingReader) Read(p []byte) (int, error) {
-	r.reads++
-	if r.index >= len(r.data) {
+// Read serves input and records the amount consumed.
+func (reader *countingReader) Read(buffer []byte) (int, error) {
+	reader.calls++
+	if reader.offset >= len(reader.data) {
 		return 0, io.EOF
 	}
 
-	n := copy(p, r.data[r.index:])
-	r.index += n
+	n := copy(buffer, reader.data[reader.offset:])
+	reader.offset += n
+
 	return n, nil
 }
 
-func TestNeedsContent(t *testing.T) {
+// noProgressReader simulates a broken reader that never returns bytes or an error.
+type noProgressReader struct{}
+
+// Read reports no progress on every call.
+func (noProgressReader) Read([]byte) (int, error) {
+	return 0, nil
+}
+
+func TestRequiredPrefixProfiles(t *testing.T) {
 	t.Parallel()
 
-	if NeedsContent(AnalyzeOptions{
-		Path:        "x.rvmat",
-		DefaultPlan: PlanFast(),
-	}) {
-		t.Fatal("NeedsContent(rvmat, extension-only): want false")
+	testCases := []struct {
+		name    string
+		profile Profile
+		want    int
+	}{
+		{name: "x.p3d", profile: ProfileFast, want: 0},
+		{name: "x.p3d", profile: ProfileNormal, want: 4},
+		{name: "x.wrp", profile: ProfileNormal, want: 4},
+		{name: "x.rvmat", profile: ProfileNormal, want: 4},
+		{name: "x.bisurf", profile: ProfileNormal, want: 4},
+		{name: "x.png", profile: ProfileNormal, want: 0},
+		{name: "x.sqf", profile: ProfileNormal, want: 0},
+		{name: "x.unknown", profile: ProfileNormal, want: 0},
+		{name: "x.png", profile: ProfileThorough, want: thoroughPrefixSize},
+		{name: "x.cfg", profile: ProfileThorough, want: semanticPrefixSize},
 	}
-	if NeedsContent(AnalyzeOptions{
-		Path:        "x.rvmat",
-		DefaultPlan: PlanNormal(),
-	}) != true {
-		t.Fatal("NeedsContent(rvmat, magic-needed): want true")
-	}
-	if NeedsContent(AnalyzeOptions{
-		Path:        "x.bisurf",
-		DefaultPlan: PlanNormal(),
-	}) != true {
-		t.Fatal("NeedsContent(bisurf, magic-needed): want true")
-	}
-	if NeedsContent(AnalyzeOptions{
-		Path:        "x.emat",
-		DefaultPlan: PlanNormal(),
-	}) {
-		t.Fatal("NeedsContent(emat, magic-needed): want false")
-	}
-	if !NeedsContent(AnalyzeOptions{
-		Path:        "x.png",
-		DefaultPlan: PlanNormal(),
-	}) {
-		t.Fatal("NeedsContent(png, magic-needed): want true")
-	}
-	if !NeedsContent(AnalyzeOptions{
-		Path:        "x.unknown",
-		DefaultPlan: PlanNormal(),
-	}) {
-		t.Fatal("NeedsContent(unknown, magic-needed): want true")
-	}
-	if !NeedsContent(AnalyzeOptions{
-		Path:        "x.rvmat",
-		DefaultPlan: PlanStrict(),
-	}) {
-		t.Fatal("NeedsContent(rvmat, strict): want true")
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name+"/"+string(rune('0'+testCase.profile)), func(t *testing.T) {
+			t.Parallel()
+			if got := RequiredPrefix(testCase.name, testCase.profile); got != testCase.want {
+				t.Fatalf("RequiredPrefix(%q, %d) = %d, want %d", testCase.name, testCase.profile, got, testCase.want)
+			}
+		})
 	}
 }
 
-func TestAnalyzeFastIgnoresMagic(t *testing.T) {
+func TestAnalyzeHonorsProfileAndRelations(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(AnalyzeOptions{
-		Path:        "config.rvmat",
-		Prefix:      []byte{0x00, 'r', 'a', 'P', 0x00},
-		DefaultPlan: PlanFast(),
-	})
-
-	if result.Probe.Resolved.ID != "bi.rvmat" {
-		t.Fatalf("resolved=%q want bi.rvmat", result.Probe.Resolved.ID)
+	png := []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
+	fast := Analyze("script.sqf", png, ProfileFast)
+	if fast.Type != "text.sqf" || fast.Relation != RelationPathOnly {
+		t.Fatalf("fast result = %+v, want path-only SQF", fast)
 	}
-	if result.Probe.Source != SourceExtension {
-		t.Fatalf("source=%q want %q", result.Probe.Source, SourceExtension)
+
+	normal := Analyze("script.sqf", png, ProfileNormal)
+	if normal.Type != "text.sqf" || normal.ByContent != "" || normal.Relation != RelationPathOnly {
+		t.Fatalf("normal result = %+v, want path-only SQF", normal)
+	}
+
+	thorough := Analyze("script.sqf", png, ProfileThorough)
+	if thorough.Type != "image.png" || thorough.ByPath != "text.sqf" ||
+		thorough.ByContent != "image.png" || thorough.Relation != RelationConflict {
+		t.Fatalf("thorough result = %+v, want SQF/PNG conflict", thorough)
+	}
+	if !thorough.Has(FlagIncomplete) {
+		t.Fatal("short thorough prefix must be marked incomplete")
+	}
+
+	refined := Analyze("model.p3d", []byte("ODOL"), ProfileNormal)
+	if refined.Type != "bi.p3d.odol" || refined.ByPath != "bi.p3d" ||
+		refined.ByContent != "bi.p3d.odol" || refined.Relation != RelationRefined {
+		t.Fatalf("P3D result = %+v, want ODOL refinement", refined)
+	}
+
+	rvmat := Analyze("material.rvmat", []byte{0x00, 'r', 'a', 'P'}, ProfileNormal)
+	if rvmat.Type != "bi.rvmat.bin" || rvmat.Relation != RelationRefined {
+		t.Fatalf("RVMat result = %+v, want RAP refinement", rvmat)
 	}
 }
 
-func TestAnalyzeNormalUsesMagic(t *testing.T) {
+func TestAnalyzePatternRefinement(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(AnalyzeOptions{
-		Path:        "texture.png",
-		Prefix:      []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A},
-		DefaultPlan: PlanNormal(),
-	})
-
-	if result.Probe.Resolved.ID != "image.png" {
-		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
+	result := Analyze("vehicle.cfg", []byte("class CfgModels { class Test {}; };"), ProfileThorough)
+	if result.Type != "bi.model.cfg" || result.ByPath != "text.cfg" ||
+		result.ByContent != "bi.model.cfg" || result.ContentSource != ContentSourcePattern ||
+		result.Relation != RelationRefined {
+		t.Fatalf("result = %+v, want model config refinement", result)
 	}
-	if result.Probe.ByMagic.ID != "image.png" {
-		t.Fatalf("byMagic=%q want image.png", result.Probe.ByMagic.ID)
+	if !result.Has(FlagIncomplete) {
+		t.Fatal("short pattern sample must be marked incomplete")
 	}
 }
 
-func TestAnalyzeNormalUsesMagicForRVMatByDefault(t *testing.T) {
+func TestAnalyzeReaderBoundsAndNoProgress(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(AnalyzeOptions{
-		Path:        "config.rvmat",
-		Prefix:      []byte{0x00, 'r', 'a', 'P', 0x00},
-		DefaultPlan: PlanNormal(),
-	})
-
-	if result.Probe.Resolved.ID != "bi.rvmat.bin" {
-		t.Fatalf("resolved=%q want bi.rvmat.bin", result.Probe.Resolved.ID)
-	}
-	if result.Probe.ByMagic.ID != "bi.rvmat.bin" {
-		t.Fatalf("byMagic=%q want bi.rvmat.bin", result.Probe.ByMagic.ID)
-	}
-}
-
-func TestAnalyzeNormalUsesMagicForBisurfByDefault(t *testing.T) {
-	t.Parallel()
-
-	result := Analyze(AnalyzeOptions{
-		Path:        "armor.bisurf",
-		Prefix:      []byte{0x00, 'r', 'a', 'P', 0x00},
-		DefaultPlan: PlanNormal(),
-	})
-
-	if result.Probe.Resolved.ID != "bi.surface.bisurf.bin" {
-		t.Fatalf("resolved=%q want bi.surface.bisurf.bin", result.Probe.Resolved.ID)
-	}
-	if result.Probe.ByMagic.ID != "bi.surface.bisurf.bin" {
-		t.Fatalf("byMagic=%q want bi.surface.bisurf.bin", result.Probe.ByMagic.ID)
-	}
-}
-
-func TestAnalyzeStrictMagicMismatch(t *testing.T) {
-	t.Parallel()
-
-	result := Analyze(AnalyzeOptions{
-		Path:        "texture.png",
-		Prefix:      []byte("NOTPNG"),
-		DefaultPlan: PlanStrict(),
-	})
-
-	if result.Valid {
-		t.Fatal("strict result must be invalid on magic mismatch")
-	}
-	if !result.CheckedMagic {
-		t.Fatal("strict result must check magic for png")
-	}
-	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueMagicMismatch {
-		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueMagicMismatch)
-	}
-}
-
-func TestAnalyzeStrictTextValidation(t *testing.T) {
-	t.Parallel()
-
-	result := Analyze(AnalyzeOptions{
-		Path:        "script.sqf",
-		Prefix:      []byte{0x00, 0x01, 0x02},
-		DefaultPlan: PlanStrict(),
-	})
-
-	if result.Valid {
-		t.Fatal("strict result must be invalid for binary-like text payload")
-	}
-	if !result.CheckedText {
-		t.Fatal("strict result must check text for sqf")
-	}
-	if result.LooksText {
-		t.Fatal("strict result must mark binary-like sample as not text")
-	}
-	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueTextExpected {
-		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueTextExpected)
-	}
-}
-
-func TestAnalyzeStrictWithoutPrefixReportsInsufficientContent(t *testing.T) {
-	t.Parallel()
-
-	result := Analyze(AnalyzeOptions{
-		Path:        "script.sqf",
-		DefaultPlan: PlanStrict(),
-	})
-
-	if result.Valid {
-		t.Fatal("strict result must be invalid without content prefix")
-	}
-	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueInsufficientContent {
-		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueInsufficientContent)
-	}
-}
-
-func TestAnalyzeStrictContentPatternMismatch(t *testing.T) {
-	t.Parallel()
-
-	result := Analyze(AnalyzeOptions{
-		Path:        "mesh.txo",
-		Prefix:      []byte("not a txo payload"),
-		DefaultPlan: PlanStrict(),
-	})
-
-	if result.Valid {
-		t.Fatal("strict result must be invalid on content pattern mismatch")
-	}
-	if !result.CheckedContentPattern {
-		t.Fatal("strict result must check content pattern for txo")
-	}
-	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueContentPatternMismatch {
-		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueContentPatternMismatch)
-	}
-}
-
-func TestAnalyzeStrictContentPatternWithLeadingComments(t *testing.T) {
-	t.Parallel()
-
-	result := Analyze(AnalyzeOptions{
-		Path: "mesh.txo",
-		Prefix: []byte(
-			"// generated file\n\t# note\n  \n\t$object \"x\" {\n}",
-		),
-		DefaultPlan: PlanStrict(),
-	})
-
-	if !result.Valid {
-		t.Fatalf("strict result must be valid, issues=%v", result.Issues)
-	}
-	if !result.CheckedContentPattern {
-		t.Fatal("strict result must check content pattern for txo")
-	}
-}
-
-func TestAnalyzeReaderSkipsReadWhenNotNeeded(t *testing.T) {
-	t.Parallel()
-
-	reader := &countingReader{data: []byte("class CfgFoo {}")}
-	result, err := AnalyzeReader(reader, AnalyzeOptions{
-		Path:        "x.sqf",
-		DefaultPlan: PlanNormal(),
-	})
-	if err != nil {
-		t.Fatalf("AnalyzeReader(sqf): %v", err)
-	}
-	if reader.reads != 0 {
-		t.Fatalf("reads=%d want 0", reader.reads)
-	}
-	if result.Probe.Resolved.ID != "text.sqf" {
-		t.Fatalf("resolved=%q want text.sqf", result.Probe.Resolved.ID)
-	}
-}
-
-func TestAnalyzeReaderReadsWhenNeeded(t *testing.T) {
-	t.Parallel()
-
-	reader := &countingReader{
-		data: []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A},
-	}
-	result, err := AnalyzeReader(reader, AnalyzeOptions{
-		Path:        "x.png",
-		DefaultPlan: PlanNormal(),
-	})
-	if err != nil {
-		t.Fatalf("AnalyzeReader(png): %v", err)
-	}
-	if reader.reads == 0 {
-		t.Fatal("reader must be consumed for png")
-	}
-	if result.Probe.Resolved.ID != "image.png" {
-		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
-	}
-}
-
-func TestAnalyzeFile(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test.png")
-	if err := os.WriteFile(filePath, []byte{
-		0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
-	}, 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	result, err := AnalyzeFile(AnalyzeOptions{
-		Path:        filePath,
-		DefaultPlan: PlanNormal(),
-	})
-	if err != nil {
-		t.Fatalf("AnalyzeFile: %v", err)
-	}
-	if result.Probe.Resolved.ID != "image.png" {
-		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
-	}
-}
-
-func TestNeedsContentFastWithWRPMagicOverride(t *testing.T) {
-	t.Parallel()
-
-	if NeedsContent(AnalyzeOptions{
-		Path:        "terrain.wrp",
-		DefaultPlan: PlanFast(),
-		PlansByExtension: map[string]AnalyzePlan{
-			"wrp": {
-				Match: AnalyzeMatchExtensionMagic,
-			},
-		},
-	}) != true {
-		t.Fatal("NeedsContent(wrp override): want true")
-	}
-}
-
-func TestAnalyzeReaderFastWithWRPMagicOverride(t *testing.T) {
-	t.Parallel()
-
-	reader := &countingReader{data: []byte("9VBW\x00\x00")}
-	result, err := AnalyzeReader(reader, AnalyzeOptions{
-		Path:        "terrain.wrp",
-		DefaultPlan: PlanFast(),
-		PlansByExtension: map[string]AnalyzePlan{
-			"wrp": {
-				Match: AnalyzeMatchExtensionMagic,
-			},
-		},
-	})
+	reader := &countingReader{data: []byte("ODOL extra bytes")}
+	result, err := AnalyzeReader("model.p3d", reader, ProfileNormal)
 	if err != nil {
 		t.Fatalf("AnalyzeReader: %v", err)
 	}
-	if reader.reads == 0 {
-		t.Fatal("reader must be consumed for wrp magic override")
+	if reader.offset != 4 || result.Type != "bi.p3d.odol" {
+		t.Fatalf("read %d bytes, result %+v; want 4 bytes and ODOL", reader.offset, result)
 	}
-	if result.Probe.Resolved.ID != "bi.wrp.9vbw" {
-		t.Fatalf("resolved=%q want bi.wrp.9vbw", result.Probe.Resolved.ID)
+
+	unused := &countingReader{data: []byte("ignored")}
+	if _, err := AnalyzeReader("script.sqf", unused, ProfileNormal); err != nil {
+		t.Fatalf("AnalyzeReader without planned read: %v", err)
+	}
+	if unused.calls != 0 {
+		t.Fatalf("reader calls = %d, want 0", unused.calls)
+	}
+	if _, err := AnalyzeReader("script.sqf", nil, ProfileNormal); err != nil {
+		t.Fatalf("nil reader with zero requirement: %v", err)
+	}
+
+	if _, err := AnalyzeReader("x.p3d", noProgressReader{}, ProfileNormal); !errors.Is(err, io.ErrNoProgress) {
+		t.Fatalf("no-progress error = %v, want io.ErrNoProgress", err)
 	}
 }
 
-func TestAnalyzeNormalWithStrictOverrideByExtension(t *testing.T) {
+func TestAnalyzeReaderShortInputAndFileFastPath(t *testing.T) {
 	t.Parallel()
 
-	result := Analyze(AnalyzeOptions{
-		Path:        "script.sqf",
-		Prefix:      []byte{0x00, 0x01, 0x02},
-		DefaultPlan: PlanNormal(),
-		PlansByExtension: map[string]AnalyzePlan{
-			"sqf": {
-				Match:    AnalyzeMatchExtensionMagicNeeded,
-				Validate: AnalyzeValidateStrict,
-			},
-		},
-	})
+	result, err := AnalyzeReader("model.p3d", strings.NewReader("OD"), ProfileNormal)
+	if err != nil {
+		t.Fatalf("short reader: %v", err)
+	}
+	if result.Type != "bi.p3d" || !result.Has(FlagIncomplete) {
+		t.Fatalf("short result = %+v, want incomplete generic P3D", result)
+	}
 
-	if result.Valid {
-		t.Fatal("result must be invalid for strict sqf override")
+	result, err = AnalyzeFile("missing.png", ProfileNormal)
+	if err != nil {
+		t.Fatalf("zero-read file fast path: %v", err)
 	}
-	if !result.CheckedText {
-		t.Fatal("result must check text in strict sqf override")
-	}
-	if len(result.Issues) != 1 || result.Issues[0] != AnalyzeIssueTextExpected {
-		t.Fatalf("issues=%v want [%q]", result.Issues, AnalyzeIssueTextExpected)
+	if result.Type != "image.png" || result.RequiredPrefix != 0 {
+		t.Fatalf("file fast-path result = %+v", result)
 	}
 }
 
-func TestAnalyzerReuse(t *testing.T) {
+func TestAnalyzePreservesPathSpacesAndSeparators(t *testing.T) {
 	t.Parallel()
 
-	analyzer := NewAnalyzer(AnalyzeOptions{
-		DefaultPlan: PlanNormal(),
-	})
-	if !analyzer.NeedsContent("x.png") {
-		t.Fatal("analyzer.NeedsContent(png): want true")
+	if got := Analyze("dir\\Texture.PNG", nil, ProfileFast).Type; got != "image.png" {
+		t.Fatalf("Windows-style path type = %q, want image.png", got)
 	}
+	if got := Analyze("dir/Texture.PNG", nil, ProfileFast).Type; got != "image.png" {
+		t.Fatalf("slash path type = %q, want image.png", got)
+	}
+	if got := Analyze("Texture.PNG ", nil, ProfileFast).Type; got != UnknownID {
+		t.Fatalf("space-suffixed name type = %q, want unknown", got)
+	}
+}
 
-	result := analyzer.Analyze("texture.png", []byte{
-		0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
-	})
-	if result.Probe.Resolved.ID != "image.png" {
-		t.Fatalf("resolved=%q want image.png", result.Probe.Resolved.ID)
-	}
+func TestAnalyzeRejectsInvalidProfile(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("invalid profile must panic")
+		}
+	}()
+	Analyze("x.png", nil, Profile(255))
 }

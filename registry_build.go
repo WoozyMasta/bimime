@@ -1,0 +1,358 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 WoozyMasta
+// Source: github.com/woozymasta/bimime
+
+package bimime
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
+
+// compiledRegistry stores normalized declarations and their immutable indexes.
+type compiledRegistry struct {
+	// records contains normalized registry entries.
+	records []registryRecord
+	// byID indexes entries by normalized stable id.
+	byID map[string]registryRecord
+	// byExtension indexes entries by normalized extension.
+	byExtension map[string]registryRecord
+	// magic contains static signature matches in deterministic order.
+	magic []magicMatch
+	// fileNames maps normalized exact basenames to type ids.
+	fileNames map[string]string
+	// filePrefixes stores filename prefix rules from longest to shortest.
+	filePrefixes []filePrefixRecord
+	// fileSuffixes stores filename suffix rules from longest to shortest.
+	fileSuffixes []fileSuffixRecord
+}
+
+// fileKeyRecord stores one normalized filename prefix or suffix rule.
+type fileKeyRecord struct {
+	// key is the normalized rule value.
+	key string
+	// typeID is the stable id selected by this rule.
+	typeID string
+}
+
+// mustBuildRegistry panics when the built-in registry contains invalid data.
+func mustBuildRegistry(
+	definitions []registryRecord,
+	fileNames map[string]string,
+	filePrefixes map[string]string,
+	fileSuffixes map[string]string,
+) compiledRegistry {
+	registry, err := buildRegistry(
+		definitions,
+		fileNames,
+		filePrefixes,
+		fileSuffixes,
+		contextualRefinements,
+		pathPatternRefinements,
+	)
+	if err != nil {
+		panic(fmt.Errorf("bimime: invalid built-in registry: %w", err))
+	}
+
+	return registry
+}
+
+// registryErrorf adds the registry error category to a validation message.
+func registryErrorf(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", errInvalidRegistry, fmt.Sprintf(format, args...))
+}
+
+// buildRegistry normalizes declarations, validates references, and compiles indexes.
+func buildRegistry(
+	definitions []registryRecord,
+	fileNames map[string]string,
+	filePrefixes map[string]string,
+	fileSuffixes map[string]string,
+	contextual map[contextualRefinementKey]TypeID,
+	patterns []pathPatternRefinement,
+) (compiledRegistry, error) {
+	for index, record := range definitions {
+		if utf8Len(record.typ.ShortDescription) > maxShortDescriptionLen {
+			return compiledRegistry{}, registryErrorf(
+				"record %d short description exceeds %d runes",
+				index,
+				maxShortDescriptionLen,
+			)
+		}
+	}
+
+	registry := compiledRegistry{
+		records:     normalizeRegistryRecords(definitions),
+		byID:        make(map[string]registryRecord, len(definitions)),
+		byExtension: make(map[string]registryRecord, len(definitions)),
+		fileNames:   make(map[string]string, len(fileNames)),
+	}
+
+	for index := range registry.records {
+		record := registry.records[index]
+		id := lowerKey(strings.TrimSpace(string(record.typ.ID)))
+		if id == "" {
+			return compiledRegistry{}, registryErrorf("record %d has an empty type id", index)
+		}
+		if id == string(UnknownID) {
+			return compiledRegistry{}, registryErrorf("type id %q is reserved", id)
+		}
+		if _, exists := registry.byID[id]; exists {
+			return compiledRegistry{}, registryErrorf("duplicate type id %q", id)
+		}
+
+		record.typ.ID = TypeID(id)
+		family := lowerKey(strings.TrimSpace(string(record.typ.Family)))
+		if family == "" {
+			family = id
+		}
+
+		record.typ.Family = FamilyID(family)
+		traits := record.typ.Traits & (TraitText | TraitBinary)
+		if traits != TraitText && traits != TraitBinary {
+			return compiledRegistry{}, registryErrorf("type %q must declare exactly one text/binary trait", id)
+		}
+		if utf8Len(record.typ.ShortDescription) > maxShortDescriptionLen {
+			return compiledRegistry{}, registryErrorf("type %q short description exceeds %d runes", id, maxShortDescriptionLen)
+		}
+
+		record.typ.Extensions = append([]string(nil), record.typ.Extensions...)
+		registry.records[index] = record
+		registry.byID[id] = record
+
+		for extensionIndex, extension := range record.typ.Extensions {
+			ext := normalizeRegistryExtension(extension)
+			if ext == "" {
+				return compiledRegistry{}, registryErrorf("type %q has empty extension at index %d", id, extensionIndex)
+			}
+			if _, exists := registry.byExtension[ext]; exists {
+				return compiledRegistry{}, registryErrorf("duplicate extension %q", ext)
+			}
+
+			record.typ.Extensions[extensionIndex] = ext
+			registry.byExtension[ext] = record
+		}
+
+		for signatureIndex, signature := range record.magic {
+			if len(signature) == 0 {
+				return compiledRegistry{}, registryErrorf("type %q has empty magic signature at index %d", id, signatureIndex)
+			}
+			if len(signature) > thoroughPrefixSize {
+				return compiledRegistry{}, registryErrorf("type %q magic signature exceeds probe bound", id)
+			}
+		}
+
+		if record.normalPrefix < 0 || record.normalPrefix > thoroughPrefixSize {
+			return compiledRegistry{}, registryErrorf("type %q has invalid normal prefix %d", id, record.normalPrefix)
+		}
+	}
+
+	for index := range registry.records {
+		registry.records[index].typ.Extensions = append([]string(nil), registry.records[index].typ.Extensions...)
+		registry.byID[string(registry.records[index].typ.ID)] = registry.records[index]
+		for _, extension := range registry.records[index].typ.Extensions {
+			registry.byExtension[extension] = registry.records[index]
+		}
+	}
+
+	var err error
+	registry.fileNames, err = compileFileKeys(fileNames, registry.byID, "filename")
+	if err != nil {
+		return compiledRegistry{}, err
+	}
+
+	prefixRules, err := compileFileRules(filePrefixes, registry.byID, "prefix")
+	if err != nil {
+		return compiledRegistry{}, err
+	}
+
+	registry.filePrefixes = make([]filePrefixRecord, len(prefixRules))
+	for index, rule := range prefixRules {
+		registry.filePrefixes[index] = filePrefixRecord{prefix: rule.key, typeID: rule.typeID}
+	}
+
+	suffixRules, err := compileFileRules(fileSuffixes, registry.byID, "suffix")
+	if err != nil {
+		return compiledRegistry{}, err
+	}
+
+	registry.fileSuffixes = make([]fileSuffixRecord, len(suffixRules))
+	for index, rule := range suffixRules {
+		registry.fileSuffixes[index] = fileSuffixRecord{suffix: rule.key, typeID: rule.typeID}
+	}
+
+	registry.magic = buildMagicIndex(registry.records)
+	if err := validateMagicIndex(registry.magic); err != nil {
+		return compiledRegistry{}, err
+	}
+	if err := validateRefinements(registry, contextual, patterns); err != nil {
+		return compiledRegistry{}, err
+	}
+
+	return registry, nil
+}
+
+// normalizeRegistryExtension normalizes registry-owned extension declarations.
+func normalizeRegistryExtension(extension string) string {
+	return lowerKey(strings.TrimPrefix(strings.TrimSpace(extension), "."))
+}
+
+// compileFileKeys normalizes exact-filename rules and validates their targets.
+func compileFileKeys(
+	source map[string]string,
+	byID map[string]registryRecord,
+	kind string,
+) (map[string]string, error) {
+	compiled := make(map[string]string, len(source))
+	for rawKey, rawTypeID := range source {
+		key := lowerKey(strings.TrimSpace(rawKey))
+		typeID := lowerKey(strings.TrimSpace(rawTypeID))
+
+		if key == "" || typeID == "" {
+			return nil, registryErrorf("empty %s rule or type id", kind)
+		}
+		if _, ok := byID[typeID]; !ok {
+			return nil, registryErrorf("%s rule %q references unknown type %q", kind, key, typeID)
+		}
+		if _, exists := compiled[key]; exists {
+			return nil, registryErrorf("duplicate normalized %s rule %q", kind, key)
+		}
+
+		compiled[key] = typeID
+	}
+
+	return compiled, nil
+}
+
+// compileFileRules compiles ordered prefix or suffix rules and validates targets.
+func compileFileRules(
+	source map[string]string,
+	byID map[string]registryRecord,
+	kind string,
+) ([]fileKeyRecord, error) {
+	compiled := make([]fileKeyRecord, 0, len(source))
+	seen := make(map[string]struct{}, len(source))
+
+	for rawKey, rawTypeID := range source {
+		key := lowerKey(strings.TrimSpace(rawKey))
+		typeID := lowerKey(strings.TrimSpace(rawTypeID))
+		if key == "" || typeID == "" {
+			return nil, registryErrorf("empty %s rule or type id", kind)
+		}
+		if _, ok := byID[typeID]; !ok {
+			return nil, registryErrorf("%s rule %q references unknown type %q", kind, key, typeID)
+		}
+		if _, exists := seen[key]; exists {
+			return nil, registryErrorf("duplicate normalized %s rule %q", kind, key)
+		}
+
+		seen[key] = struct{}{}
+		compiled = append(compiled, fileKeyRecord{key: key, typeID: typeID})
+	}
+
+	slices.SortFunc(compiled, func(a, b fileKeyRecord) int {
+		if len(a.key) > len(b.key) {
+			return -1
+		}
+		if len(a.key) < len(b.key) {
+			return 1
+		}
+
+		return strings.Compare(a.key, b.key)
+	})
+
+	return compiled, nil
+}
+
+// validateMagicIndex rejects ambiguous duplicate static signatures.
+func validateMagicIndex(index []magicMatch) error {
+	seen := make(map[string]string, len(index))
+	for _, match := range index {
+		key := string(match.signature)
+		if previous, exists := seen[key]; exists {
+			return registryErrorf("duplicate magic signature %q for %q and %q", key, previous, match.typeID)
+		}
+
+		seen[key] = match.typeID
+	}
+
+	return nil
+}
+
+// validateRefinements verifies all contextual and path-pattern references.
+func validateRefinements(
+	registry compiledRegistry,
+	contextual map[contextualRefinementKey]TypeID,
+	patterns []pathPatternRefinement,
+) error {
+	for key, targetID := range contextual {
+		if _, ok := registry.byID[string(key.pathType)]; !ok {
+			return registryErrorf("contextual refinement references unknown path type %q", key.pathType)
+		}
+		if _, ok := registry.byID[string(key.contentType)]; !ok {
+			return registryErrorf("contextual refinement references unknown content type %q", key.contentType)
+		}
+		if _, ok := registry.byID[string(targetID)]; !ok {
+			return registryErrorf("contextual refinement references unknown target type %q", targetID)
+		}
+	}
+
+	for _, refinement := range patterns {
+		pathRecord, ok := registry.byID[string(refinement.pathType)]
+		if !ok {
+			return registryErrorf("path-pattern refinement references unknown path type %q", refinement.pathType)
+		}
+		targetRecord, ok := registry.byID[string(refinement.targetType)]
+		if !ok {
+			return registryErrorf("path-pattern refinement references unknown target type %q", refinement.targetType)
+		}
+		if len(targetRecord.contentPatterns) == 0 {
+			return registryErrorf("path-pattern target %q has no content pattern", refinement.targetType)
+		}
+		if pathRecord.typ.Family != targetRecord.typ.Family || pathRecord.specificity >= targetRecord.specificity {
+			return registryErrorf(
+				"path-pattern target %q is not a more specific member of family %q",
+				refinement.targetType, pathRecord.typ.Family)
+		}
+	}
+
+	for _, record := range registry.records {
+		if record.normalPrefix == 0 {
+			continue
+		}
+
+		hasRefinement := false
+		for _, candidate := range registry.records {
+			if candidate.typ.Family == record.typ.Family && candidate.specificity > record.specificity && len(candidate.magic) > 0 {
+				hasRefinement = true
+				break
+			}
+		}
+
+		if !hasRefinement {
+			for key := range contextual {
+				if key.pathType == record.typ.ID {
+					hasRefinement = true
+					break
+				}
+			}
+		}
+
+		if !hasRefinement {
+			return registryErrorf("type %q plans normal probing without a refinement", record.typ.ID)
+		}
+	}
+
+	return nil
+}
+
+// utf8Len counts runes in a registry description without allocating.
+func utf8Len(value string) int {
+	count := 0
+	for range value {
+		count++
+	}
+
+	return count
+}

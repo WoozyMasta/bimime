@@ -8,75 +8,103 @@ import "regexp"
 
 // registryRecord stores one runtime registry record with optional magic signatures.
 type registryRecord struct {
+	// contentPatterns match path-scoped semantic refinements.
 	contentPatterns []*regexp.Regexp
-	magic           [][]byte
-	typ             Type
+	// magic lists static signatures for this type.
+	magic [][]byte
+	// typ is the public descriptor with explicit classification metadata.
+	typ Type
+	// normalPrefix declares useful bytes for a normal-profile refinement.
+	normalPrefix int
+	// specificity ranks variants within a compatible family.
+	specificity uint8
 }
 
 // magicMatch stores one signature mapped to a type id for probing.
 type magicMatch struct {
-	typeID    string
+	// typeID identifies the type selected by the signature.
+	typeID string
+	// signature contains the bytes compared at offset zero.
 	signature []byte
 }
 
-// registryRecords defines known BI game file types.
-var registryRecords = normalizeRegistryRecords([]registryRecord{
+// registryDefinitions declares known BI game file types before index compilation.
+var registryDefinitions = []registryRecord{
 	{
 		typ: Type{
 			ID:          "bi.rap",
 			MIME:        "application/x-bohemia-rap",
 			Description: "raP binarized config payload",
 			Extensions:  []string{"rap"},
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.p3d.odol",
+			Family:      "bi.p3d",
 			MIME:        "model/x-bohemia-p3d-odol",
 			Description: "P3D ODOL binarized model",
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("ODOL")},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.p3d.mlod",
+			Family:      "bi.p3d",
 			MIME:        "model/x-bohemia-p3d-mlod",
 			Description: "P3D MLOD model source format",
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("MLOD")},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.wrp.oprw",
+			Family:      "bi.wrp",
 			MIME:        "application/x-bohemia-wrp-oprw",
 			Description: "WRP OPRW binarized terrain format",
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("OPRW")},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.wrp.8wvr",
+			Family:      "bi.wrp",
 			MIME:        "application/x-bohemia-wrp-8wvr",
 			Description: "WRP 8WVR terrain source format",
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("8WVR")},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.wrp.9vbw",
+			Family:      "bi.wrp",
 			MIME:        "application/x-bohemia-wrp-9vbw",
 			Description: "WRP 9VBW terrain variant from Visitor 4 with multi-rvmat",
 			Extensions:  []string{"vbs"},
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("9VBW")},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.wrp.0wzd",
+			Family:      "bi.wrp",
 			MIME:        "application/x-bohemia-wrp-0wzd",
 			Description: "WRP 0WZD terrain variant with persistent object IDs",
 			Extensions:  []string{"wzd"},
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("0WZD")},
 	},
@@ -86,6 +114,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-tesm",
 			Description: "TESM AI navigation mesh binary format",
 			Extensions:  []string{"nm"},
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("TESM")},
 	},
@@ -95,6 +124,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-pbo",
 			Description: "PBO archive format",
 			Extensions:  []string{"pbo"},
+			Traits:      TraitBinary | TraitContainer | TraitArchive,
 		},
 		magic: [][]byte{[]byte("sreV")},
 	},
@@ -104,6 +134,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/x-bohemia-paa",
 			Description: "PAA/LEVF texture image format",
 			Extensions:  []string{"paa", "pac"},
+			Traits:      TraitBinary | TraitImage,
 		},
 		magic: [][]byte{
 			{1, 255}, {2, 255}, {3, 255}, {4, 255}, {5, 255},
@@ -116,6 +147,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/png",
 			Description: "PNG image",
 			Extensions:  []string{"png"},
+			Traits:      TraitBinary | TraitImage,
 		},
 		magic: [][]byte{{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}},
 	},
@@ -125,6 +157,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/jpeg",
 			Description: "JPEG image",
 			Extensions:  []string{"jpg", "jpeg"},
+			Traits:      TraitBinary | TraitImage,
 		},
 		magic: [][]byte{{0xFF, 0xD8, 0xFF}},
 	},
@@ -134,6 +167,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/bmp",
 			Description: "BMP image",
 			Extensions:  []string{"bmp"},
+			Traits:      TraitBinary | TraitImage,
 		},
 		magic: [][]byte{[]byte("BM")},
 	},
@@ -143,6 +177,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/gif",
 			Description: "GIF image",
 			Extensions:  []string{"gif"},
+			Traits:      TraitBinary | TraitImage,
 		},
 		magic: [][]byte{[]byte("GIF87a"), []byte("GIF89a")},
 	},
@@ -152,6 +187,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/svg+xml",
 			Description: "SVG vector image",
 			Extensions:  []string{"svg"},
+			Traits:      TraitText | TraitImage,
 		},
 	},
 	{
@@ -160,23 +196,29 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/webp",
 			Description: "WebP image",
 			Extensions:  []string{"webp"},
+			Traits:      TraitBinary | TraitImage,
 		},
 	},
 	{
 		typ: Type{
 			ID:          "image.dds",
+			Family:      "image.dds",
 			MIME:        "image/vnd.ms-dds",
 			Description: "DDS texture image",
 			Extensions:  []string{"dds"},
+			Traits:      TraitBinary | TraitImage,
 		},
 		magic: [][]byte{[]byte("DDS ")},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "image.edds",
+			Family:      "image.dds",
 			MIME:        "image/x-edds",
 			Description: "EDDS texture container with DDS header and block table",
 			Extensions:  []string{"edds"},
+			Traits:      TraitBinary | TraitImage | TraitContainer,
 		},
 	},
 	{
@@ -185,6 +227,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "audio/ogg",
 			Description: "Ogg audio stream",
 			Extensions:  []string{"ogg"},
+			Traits:      TraitBinary | TraitAudio,
 		},
 		magic: [][]byte{[]byte("OggS")},
 	},
@@ -194,6 +237,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "audio/mpeg",
 			Description: "MP3 audio stream",
 			Extensions:  []string{"mp3"},
+			Traits:      TraitBinary | TraitAudio,
 		},
 		magic: [][]byte{[]byte("ID3")},
 	},
@@ -203,6 +247,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "audio/wav",
 			Description: "WAV audio stream",
 			Extensions:  []string{"wav"},
+			Traits:      TraitBinary | TraitAudio,
 		},
 	},
 	{
@@ -211,39 +256,51 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "video/mp4",
 			Description: "MP4 video container",
 			Extensions:  []string{"mp4"},
+			Traits:      TraitBinary | TraitVideo | TraitContainer,
 		},
 	},
 	{
 		typ: Type{
 			ID:          "bi.rvmat",
+			Family:      "bi.rvmat",
 			MIME:        "text/x-bohemia-rvmat",
 			Description: "RV material text config, can also be RAP",
 			Extensions:  []string{"rvmat"},
+			Traits:      TraitText,
 		},
+		normalPrefix: 4,
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.rvmat.bin",
+			Family:      "bi.rvmat",
 			MIME:        "application/x-bohemia-rvmat-rap",
 			Description: "RV material RAP-binarized payload",
+			Traits:      TraitBinary,
 		},
-		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
 		typ: Type{
 			ID:          "bi.p3d",
+			Family:      "bi.p3d",
 			MIME:        "model/x-bohemia-p3d",
 			Description: "P3D model (generic extension match without magic disambiguation)",
 			Extensions:  []string{"p3d"},
+			Traits:      TraitBinary,
 		},
+		normalPrefix: 4,
 	},
 	{
 		typ: Type{
 			ID:          "bi.wrp",
+			Family:      "bi.wrp",
 			MIME:        "application/x-bohemia-wrp",
 			Description: "WRP terrain (generic extension match without magic disambiguation)",
 			Extensions:  []string{"wrp"},
+			Traits:      TraitBinary,
 		},
+		normalPrefix: 4,
 	},
 	{
 		typ: Type{
@@ -251,6 +308,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-enforce-script",
 			Description: "Enforce Script source text (Enfusion engine)",
 			Extensions:  []string{"c"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -259,6 +317,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-rv-config",
 			Description: "RV config source text",
 			Extensions:  []string{"cpp"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -267,22 +326,27 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-rv-config-header",
 			Description: "RV config include/macros definitions text",
 			Extensions:  []string{"hpp"},
+			Traits:      TraitText,
 		},
 	},
 	{
 		typ: Type{
 			ID:          "text.cfg",
+			Family:      "text.cfg",
 			MIME:        "text/x-ini",
 			Description: "Config text",
 			Extensions:  []string{"cfg"},
+			Traits:      TraitText,
 		},
 	},
 	{
 		typ: Type{
 			ID:          "text.xml",
+			Family:      "text.xml",
 			MIME:        "application/xml",
 			Description: "XML text",
 			Extensions:  []string{"xml"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -291,6 +355,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/json",
 			Description: "JSON text",
 			Extensions:  []string{"json"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -299,6 +364,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/csv",
 			Description: "CSV text",
 			Extensions:  []string{"csv"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -307,6 +373,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/vnd.ms-excel",
 			Description: "Excel spreadsheet (.xls)",
 			Extensions:  []string{"xls"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -315,6 +382,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 			Description: "Excel spreadsheet (.xlsx)",
 			Extensions:  []string{"xlsx"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -323,6 +391,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/vnd.oasis.opendocument.spreadsheet",
 			Description: "OpenDocument spreadsheet (.ods)",
 			Extensions:  []string{"ods"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -331,6 +400,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/html",
 			Description: "HTML text (including lightweight widget markup)",
 			Extensions:  []string{"html", "htm"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -339,6 +409,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/plain",
 			Description: "Plain text",
 			Extensions:  []string{"txt"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -347,6 +418,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-shader-vert",
 			Description: "Vertex shader source text",
 			Extensions:  []string{"vert"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -355,6 +427,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-shader-frag",
 			Description: "Fragment shader source text",
 			Extensions:  []string{"frag"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -363,6 +436,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/x-tga",
 			Description: "TGA image",
 			Extensions:  []string{"tga"},
+			Traits:      TraitBinary | TraitImage,
 		},
 	},
 	{
@@ -371,6 +445,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "model/obj",
 			Description: "Wavefront OBJ model source text",
 			Extensions:  []string{"obj"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -379,6 +454,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/plain",
 			Description: "Wavefront MTL material library text",
 			Extensions:  []string{"mtl"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -387,6 +463,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "model/vnd.autodesk.fbx",
 			Description: "FBX model/animation interchange file",
 			Extensions:  []string{"fbx"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -395,6 +472,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-blender",
 			Description: "Blender scene/source file",
 			Extensions:  []string{"blend"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -403,6 +481,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "model/vnd.collada+xml",
 			Description: "COLLADA model/animation scene",
 			Extensions:  []string{"dae"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -411,6 +490,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "model/gltf+json",
 			Description: "glTF scene description (JSON)",
 			Extensions:  []string{"gltf"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -419,6 +499,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "model/gltf-binary",
 			Description: "glTF binary scene bundle",
 			Extensions:  []string{"glb"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -427,6 +508,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/vnd.adobe.photoshop",
 			Description: "Adobe Photoshop document",
 			Extensions:  []string{"psd", "psb"},
+			Traits:      TraitBinary | TraitImage,
 		},
 	},
 	{
@@ -435,6 +517,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "image/x-xcf",
 			Description: "GIMP project image",
 			Extensions:  []string{"xcf"},
+			Traits:      TraitBinary | TraitImage,
 		},
 	},
 	{
@@ -443,6 +526,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "font/ttf",
 			Description: "TrueType font",
 			Extensions:  []string{"ttf"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -451,6 +535,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-layout",
 			Description: "Enfusion UI widget layout definition text",
 			Extensions:  []string{"layout"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -459,6 +544,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-imageset",
 			Description: "Enfusion UI image set definition text",
 			Extensions:  []string{"imageset"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bImageSetClass\b`)},
 	},
@@ -468,6 +554,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-widget-styles",
 			Description: "Enfusion UI widget style definitions",
 			Extensions:  []string{"styles"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)<\s*WidgetStyles\b`)},
 	},
@@ -477,6 +564,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-qt-stylesheet",
 			Description: "Qt Style Sheet text (Workbench themes)",
 			Extensions:  []string{"qss"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -485,6 +573,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-fnt",
 			Description: "Enfusion UI font resource (binary)",
 			Extensions:  []string{"fnt"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -493,6 +582,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-anm",
 			Description: "Enfusion binary animation file",
 			Extensions:  []string{"anm"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -501,6 +591,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-animation-events",
 			Description: "Animation events table text",
 			Extensions:  []string{"ae"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -509,6 +600,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-animation-expression-table",
 			Description: "Animation source expression/sync table text",
 			Extensions:  []string{"aex"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{
 			regexp.MustCompile(`(?i)\bAnimSrcExpressionTable\b`),
@@ -521,6 +613,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-adeb",
 			Description: "Animation debug stream, likely binary; magic unknown",
 			Extensions:  []string{"adeb"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -529,6 +622,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-pap",
 			Description: "Procedural animation project text",
 			Extensions:  []string{"pap"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -537,6 +631,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-siga",
 			Description: "Procedural animation signal text",
 			Extensions:  []string{"siga"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -545,6 +640,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-txa",
 			Description: "Text animation source (txa)",
 			Extensions:  []string{"txa"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -553,6 +649,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-anim-graph-file",
 			Description: "Animation graph sheet file text",
 			Extensions:  []string{"agf"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -561,6 +658,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-animset-template",
 			Description: "Animation graph set template text",
 			Extensions:  []string{"ast"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animsettemplate\b`)},
 	},
@@ -570,6 +668,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-animset-instance",
 			Description: "Animation graph set instance text",
 			Extensions:  []string{"asi"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animsetinstance\b`)},
 	},
@@ -579,6 +678,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-anim-sync-table",
 			Description: "Animation graph sync table text",
 			Extensions:  []string{"asy"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -587,6 +687,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-anim-workspace",
 			Description: "Animation graph workspace text",
 			Extensions:  []string{"aw"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animworkspace\b`)},
 	},
@@ -596,6 +697,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-anim-graph",
 			Description: "Animation graph definition text",
 			Extensions:  []string{"agr"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$animgraph\b`)},
 	},
@@ -605,24 +707,30 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-seq",
 			Description: "BI engine sequence binary payload",
 			Extensions:  []string{"seq"},
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{{0xD3, 'S', 'E', 'Q'}},
 	},
 	{
 		typ: Type{
 			ID:          "bi.surface.bisurf",
+			Family:      "bi.surface.bisurf",
 			MIME:        "text/x-bohemia-surface",
 			Description: "BI engine surface config text, can also be RAP",
 			Extensions:  []string{"bisurf"},
+			Traits:      TraitText,
 		},
+		normalPrefix: 4,
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.surface.bisurf.bin",
+			Family:      "bi.surface.bisurf",
 			MIME:        "application/x-bohemia-surface-rap",
 			Description: "BI engine surface config RAP-binarized payload",
+			Traits:      TraitBinary,
 		},
-		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
 		typ: Type{
@@ -630,6 +738,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-map",
 			Description: "BI engine map payload (.map), format varies by tool/title",
 			Extensions:  []string{"map"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -637,6 +746,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.world.areaflags-map",
 			MIME:        "application/x-bohemia-areaflags-map",
 			Description: "Central Economy territory flags for loot and AI zoning",
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -645,6 +755,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-emat",
 			Description: "Enfusion material definition text",
 			Extensions:  []string{"emat"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bmaterial\b`)},
 	},
@@ -654,6 +765,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-fxy",
 			Description: "BI bitmap font glyph index/mapping payload",
 			Extensions:  []string{"fxy"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -662,6 +774,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-ptc",
 			Description: "Enfusion particle system definition text",
 			Extensions:  []string{"ptc"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bEffectDef\b`)},
 	},
@@ -671,6 +784,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-txo",
 			Description: "Enfusion text model source (source for xob)",
 			Extensions:  []string{"txo"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\$object\b`)},
 	},
@@ -680,6 +794,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-directx-shader",
 			Description: "DirectX bytecode shader payload",
 			Extensions:  []string{"pso", "vso", "cso"},
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("DXBC")},
 	},
@@ -689,6 +804,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-xob",
 			Description: "Enfusion binary model file (built from txo)",
 			Extensions:  []string{"xob"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -697,6 +813,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-acp",
 			Description: "Audio component definition text",
 			Extensions:  []string{"acp"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -705,6 +822,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-afm",
 			Description: "Audio final mixer definition text",
 			Extensions:  []string{"afm"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -713,6 +831,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-sig",
 			Description: "Audio signal logic definition text",
 			Extensions:  []string{"sig"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -721,6 +840,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-snd",
 			Description: "Sound container payload",
 			Extensions:  []string{"snd"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -729,6 +849,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-behavior-tree",
 			Description: "AI behavior tree definition text",
 			Extensions:  []string{"bt"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -737,6 +858,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-component-template",
 			Description: "Entity component template definition text",
 			Extensions:  []string{"ct"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -745,6 +867,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-config",
 			Description: "Generic config text",
 			Extensions:  []string{"conf"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -753,6 +876,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-gamemat",
 			Description: "Game material definition text",
 			Extensions:  []string{"gamemat"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -761,6 +885,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-physmat",
 			Description: "Physics material definition text",
 			Extensions:  []string{"physmat"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -769,6 +894,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-nmn",
 			Description: "Navmesh instance, likely binary; magic unknown",
 			Extensions:  []string{"nmn"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -777,6 +903,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-pak",
 			Description: "Game/mod data archive package",
 			Extensions:  []string{"pak"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -785,6 +912,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-rdb",
 			Description: "Resource database index payload",
 			Extensions:  []string{"rdb"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -793,6 +921,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-stars",
 			Description: "Runtime stars database, likely binary; magic unknown",
 			Extensions:  []string{"stars"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -801,6 +930,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-st",
 			Description: "Localization string table text",
 			Extensions:  []string{"st"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -809,6 +939,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-meta",
 			Description: "BI engine metadata sidecar text",
 			Extensions:  []string{"meta"},
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bMetaFileClass\b`)},
 	},
@@ -818,6 +949,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-fsdf",
 			Description: "BI engine SDF font resource definition text",
 			Extensions:  []string{"fsdf"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -826,6 +958,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-project",
 			Description: "Project-specific Workbench settings",
 			Extensions:  []string{"gproj"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -834,6 +967,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-pre",
 			Description: "Resource Viewer preset text",
 			Extensions:  []string{"pre"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -842,6 +976,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-ragdoll",
 			Description: "Ragdoll definition text",
 			Extensions:  []string{"ragdoll"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -850,6 +985,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-project",
 			Description: "Workbench project XML",
 			Extensions:  []string{"sproj"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -858,6 +994,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-solution",
 			Description: "Workbench solution XML",
 			Extensions:  []string{"ssln"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -865,6 +1002,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.texheaders",
 			MIME:        "application/x-bohemia-texheaders",
 			Description: "texHeaders.bin texture metadata index (0DHT, version 1)",
+			Traits:      TraitBinary,
 		},
 		magic: [][]byte{[]byte("0DHT")},
 	},
@@ -874,6 +1012,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-bikey",
 			Description: "BI engine public key (.bikey)",
 			Extensions:  []string{"bikey"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -882,6 +1021,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-biprivatekey",
 			Description: "BI engine private key (.biprivatekey)",
 			Extensions:  []string{"biprivatekey"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -890,6 +1030,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-bisign",
 			Description: "BI engine signature file (.bisign)",
 			Extensions:  []string{"bisign"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -897,6 +1038,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.config.main.cpp",
 			MIME:        "text/x-bohemia-addon-config",
 			Description: "Addon root config.cpp (RaP-capable text config)",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -904,14 +1046,15 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.config.main.bin",
 			MIME:        "application/x-bohemia-addon-config-rap",
 			Description: "Addon root config.bin (RAP-binarized config)",
+			Traits:      TraitBinary,
 		},
-		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
 		typ: Type{
 			ID:          "bi.mod.cpp",
 			MIME:        "text/x-bohemia-mod-config",
 			Description: "Mod root mod.cpp metadata config",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -919,14 +1062,17 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.mod.bin",
 			MIME:        "application/x-bohemia-mod-config-rap",
 			Description: "Mod root mod.bin metadata config",
+			Traits:      TraitBinary,
 		},
-		magic: [][]byte{{0x00, 'r', 'a', 'P'}},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.model.cfg",
+			Family:      "text.cfg",
 			MIME:        "text/x-bohemia-model-config",
 			Description: "Model animation config (model.cfg)",
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bclass\s+cfgmodels\b`)},
 	},
@@ -935,6 +1081,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.db.economy",
 			MIME:        "application/xml",
 			Description: "Central Economy runtime toggles for init, persistence, and respawn groups",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -942,6 +1089,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.db.events",
 			MIME:        "application/xml",
 			Description: "Central Economy dynamic event definitions and spawn controllers",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -949,6 +1097,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.db.globals",
 			MIME:        "application/xml",
 			Description: "Central Economy global spawn limits and behavior variables",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -956,6 +1105,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.db.types",
 			MIME:        "application/xml",
 			Description: "Central Economy catalog of spawnable entities with tags and limits",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -963,6 +1113,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.db.messages",
 			MIME:        "application/xml",
 			Description: "Central Economy server message schedule and timing definitions",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -970,6 +1121,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.mission.init-c",
 			MIME:        "text/x-bohemia-enforce-script",
 			Description: "Mission startup script executed during scenario initialization",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -977,6 +1129,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgeconomycore",
 			MIME:        "application/xml",
 			Description: "Core economy behavior switches and bootstrap parameters",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -984,6 +1137,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgenvironment",
 			MIME:        "application/xml",
 			Description: "Animal and infected habitat and territory configuration",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -991,6 +1145,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgareaflags",
 			MIME:        "application/xml",
 			Description: "Definitions of area limiter flags and semantic names",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -998,6 +1153,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfglimitsdefinition",
 			MIME:        "application/xml",
 			Description: "Definitions of tag and category limiters for economy rules",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1005,6 +1161,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfglimitsdefinitionuser",
 			MIME:        "application/xml",
 			Description: "User-friendly limiter aliases built on base limiter definitions",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1012,6 +1169,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgeventspawns",
 			MIME:        "application/xml",
 			Description: "Placement and rotation sets for dynamic event spawn points",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1019,6 +1177,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgeventgroups",
 			MIME:        "application/xml",
 			Description: "Grouping and weighting rules for dynamic event pools",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1026,6 +1185,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgplayerspawnpoints",
 			MIME:        "application/xml",
 			Description: "Base rules and positions used to generate player spawns",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1033,6 +1193,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgspawnabletypes",
 			MIME:        "application/xml",
 			Description: "Attachment and cargo randomization rules per spawnable entity",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1040,6 +1201,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgrandompresets",
 			MIME:        "application/xml",
 			Description: "Reusable random presets for cargo and attachment generation",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1047,6 +1209,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgweather",
 			MIME:        "application/xml",
 			Description: "Weather behavior configuration with limits and transitions",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1054,6 +1217,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgignorelist",
 			MIME:        "application/xml",
 			Description: "Central Economy ignored entities and exclusions list",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1061,6 +1225,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.mapclusterproto",
 			MIME:        "application/xml",
 			Description: "Cluster map-group prototypes with loot container layouts",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1068,6 +1233,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.mapgroupcluster",
 			MIME:        "application/xml",
 			Description: "Exported positions of cluster map groups across the world",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1075,6 +1241,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.mapgroupdirt",
 			MIME:        "application/xml",
 			Description: "Positions of map groups not bound to explicit world objects",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1082,6 +1249,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.mapgrouppos",
 			MIME:        "application/xml",
 			Description: "Exported positions of standard map groups and building instances",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1089,13 +1257,17 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.mapgroupproto",
 			MIME:        "application/xml",
 			Description: "Standard map-group prototypes with loot container layouts",
+			Traits:      TraitText,
 		},
 	},
 	{
+		specificity: 1,
 		typ: Type{
 			ID:          "bi.ce.ceproject-config",
+			Family:      "text.xml",
 			MIME:        "application/xml",
 			Description: "CEProject zg-config map descriptor (ceproject-config.xml)",
+			Traits:      TraitText,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)<\s*zg-config\b`)},
 	},
@@ -1104,6 +1276,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.env.territories",
 			MIME:        "application/xml",
 			Description: "CE territory layer payload (*_territories.xml)",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1111,6 +1284,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgundergroundtriggers",
 			MIME:        "application/json",
 			Description: "Underground trigger volumes and logic definitions",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1118,6 +1292,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfgeffectarea",
 			MIME:        "application/json",
 			Description: "Effect area configuration for CE zones and modifiers",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1125,6 +1300,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.cfggameplay",
 			MIME:        "application/json",
 			Description: "Gameplay tuning profile used by CE and mission systems",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1132,6 +1308,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.gameplay-gear-presets",
 			MIME:        "application/json",
 			Description: "Gameplay gear preset catalog for random loadout assembly",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1139,6 +1316,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.ce.object-spawner",
 			MIME:        "application/json",
 			Description: "Object spawner definitions and placement rules",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1147,6 +1325,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-mission-sqm",
 			Description: "Mission editor data (mission.sqm)",
 			Extensions:  []string{"sqm"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1154,6 +1333,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.stringtable.csv",
 			MIME:        "text/csv",
 			Description: "Stringtable.csv localization table",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1161,6 +1341,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.stringtable.xml",
 			MIME:        "application/xml",
 			Description: "Stringtable.xml localization table",
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1169,6 +1350,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-ent",
 			Description: "World scene definition text",
 			Extensions:  []string{"ent"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1177,6 +1359,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-et",
 			Description: "Entity template definition text",
 			Extensions:  []string{"et"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1185,6 +1368,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-layer",
 			Description: "World layer definition text",
 			Extensions:  []string{"layer"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1193,6 +1377,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-smap",
 			Description: "Sound map data payload",
 			Extensions:  []string{"smap"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1201,6 +1386,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-smd",
 			Description: "Shore map data container (FORM/SMDF)",
 			Extensions:  []string{"smd"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1209,6 +1395,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-topo",
 			Description: "Topography data payload",
 			Extensions:  []string{"topo"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1217,6 +1404,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/plain",
 			Description: "ESRI ASCII height map import/export",
 			Extensions:  []string{"asc"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1225,6 +1413,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-terrain-desc",
 			Description: "Terrain dialog configuration text",
 			Extensions:  []string{"desc"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1233,6 +1422,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-terr",
 			Description: "Terrain data payload",
 			Extensions:  []string{"terr"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1241,6 +1431,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-ttile",
 			Description: "Runtime terrain tile, likely binary; magic unknown",
 			Extensions:  []string{"ttile"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1249,6 +1440,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-bterr",
 			Description: "Editor terrain data, likely binary; magic unknown",
 			Extensions:  []string{"bterr"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1257,6 +1449,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-bohemia-bttile",
 			Description: "Editor terrain tile, likely binary; magic unknown",
 			Extensions:  []string{"bttile"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1265,6 +1458,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-bohemia-vhcsurf",
 			Description: "Vehicle surface properties definition text",
 			Extensions:  []string{"vhcsurf"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1273,6 +1467,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-sqf",
 			Description: "SQF script source text (Real Virtuality)",
 			Extensions:  []string{"sqf"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1281,6 +1476,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-sqfc",
 			Description: "SQF bytecode binary (Real Virtuality)",
 			Extensions:  []string{"sqfc"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1289,6 +1485,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-sqs",
 			Description: "SQS script source text (Real Virtuality)",
 			Extensions:  []string{"sqs"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1297,6 +1494,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-lip",
 			Description: "Lip-sync text data",
 			Extensions:  []string{"lip"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1305,6 +1503,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/x-pew",
 			Description: "Visitor project source text",
 			Extensions:  []string{"pew"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1313,6 +1512,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "audio/x-bohemia-wss",
 			Description: "WSS audio stream",
 			Extensions:  []string{"wss"},
+			Traits:      TraitBinary | TraitAudio,
 		},
 	},
 	{
@@ -1321,6 +1521,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "text/plain",
 			Description: "Engine report log text",
 			Extensions:  []string{"rpt"},
+			Traits:      TraitText,
 		},
 	},
 	{
@@ -1329,6 +1530,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/octet-stream",
 			Description: "Engine crash dump (.bidmp)",
 			Extensions:  []string{"bidmp"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1337,6 +1539,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/octet-stream",
 			Description: "Engine crash dump (.mdmp)",
 			Extensions:  []string{"mdmp"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1344,6 +1547,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			ID:          "bi.crash.context-bin",
 			MIME:        "application/octet-stream",
 			Description: "Crash context.bin",
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1352,6 +1556,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/octet-stream",
 			Description: "Generic binary payload",
 			Extensions:  []string{"bin"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1360,6 +1565,7 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-lzss",
 			Description: "Raw LZSS stream (no stable magic header)",
 			Extensions:  []string{"lzss"},
+			Traits:      TraitBinary,
 		},
 	},
 	{
@@ -1368,18 +1574,10 @@ var registryRecords = normalizeRegistryRecords([]registryRecord{
 			MIME:        "application/x-lzo",
 			Description: "Raw LZO1X stream (no stable magic header)",
 			Extensions:  []string{"lzo"},
+			Traits:      TraitBinary,
 		},
 	},
-})
-
-// typeByID indexes registry records by id.
-var typeByID = buildTypeByID(registryRecords)
-
-// typeByExtension indexes registry records by extension.
-var typeByExtension = buildTypeByExtension(registryRecords)
-
-// magicIndex stores signatures sorted by length desc for stable probing.
-var magicIndex = buildMagicIndex(registryRecords)
+}
 
 // typeIDByFileName maps well-known file names to stable type ids.
 var typeIDByFileName = map[string]string{
@@ -1435,3 +1633,23 @@ var typeIDByFilePrefix = map[string]string{
 var typeIDByFileSuffix = map[string]string{
 	"_territories.xml": "bi.ce.env.territories",
 }
+
+// builtinRegistry contains the validated immutable indexes used by the package.
+var builtinRegistry = mustBuildRegistry(
+	registryDefinitions,
+	typeIDByFileName,
+	typeIDByFilePrefix,
+	typeIDByFileSuffix,
+)
+
+// registryRecords contains normalized built-in declarations.
+var registryRecords = builtinRegistry.records
+
+// typeByID indexes registry records by stable id.
+var typeByID = builtinRegistry.byID
+
+// typeByExtension indexes registry records by normalized extension.
+var typeByExtension = builtinRegistry.byExtension
+
+// magicIndex stores static signatures in deterministic matching order.
+var magicIndex = builtinRegistry.magic

@@ -7,6 +7,9 @@ package bimime
 import "errors"
 
 var (
-	// ErrNilReader is returned when AnalyzeReader receives nil reader.
+	// ErrNilReader is returned when AnalyzeReader needs content from a nil reader.
 	ErrNilReader = errors.New("nil reader")
+
+	// errInvalidRegistry marks invalid built-in registry declarations.
+	errInvalidRegistry = errors.New("invalid registry")
 )

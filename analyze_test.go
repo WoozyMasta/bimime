@@ -7,6 +7,8 @@ package bimime
 import (
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -37,9 +39,33 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 // noProgressReader simulates a broken reader that never returns bytes or an error.
 type noProgressReader struct{}
 
+// intermittentReader returns empty reads before serving its input.
+type intermittentReader struct {
+	// data is the input returned after the empty reads.
+	data []byte
+	// zeroReads counts empty reads already returned.
+	zeroReads int
+}
+
 // Read reports no progress on every call.
 func (noProgressReader) Read([]byte) (int, error) {
 	return 0, nil
+}
+
+// Read returns two temporary empty reads before serving the configured input.
+func (reader *intermittentReader) Read(buffer []byte) (int, error) {
+	if reader.zeroReads < 2 {
+		reader.zeroReads++
+		return 0, nil
+	}
+
+	n := copy(buffer, reader.data)
+	reader.data = reader.data[n:]
+	if len(reader.data) == 0 {
+		return n, io.EOF
+	}
+
+	return n, nil
 }
 
 func TestRequiredPrefixProfiles(t *testing.T) {
@@ -170,6 +196,56 @@ func TestAnalyzeReaderShortInputAndFileFastPath(t *testing.T) {
 	}
 }
 
+func TestAnalyzeReaderIntermittentNoProgress(t *testing.T) {
+	t.Parallel()
+
+	reader := &intermittentReader{data: []byte("ODOL")}
+	result, err := AnalyzeReader("model.p3d", reader, ProfileNormal)
+	if err != nil {
+		t.Fatalf("AnalyzeReader: %v", err)
+	}
+	if result.Type != "bi.p3d.odol" || reader.zeroReads != 2 {
+		t.Fatalf("result = %+v, zero reads = %d; want ODOL and two zero reads", result, reader.zeroReads)
+	}
+}
+
+func TestAnalyzeReaderExpectedContentMissing(t *testing.T) {
+	t.Parallel()
+
+	result, err := AnalyzeReader("texture.png", strings.NewReader(strings.Repeat("x", thoroughPrefixSize)), ProfileThorough)
+	if err != nil {
+		t.Fatalf("AnalyzeReader: %v", err)
+	}
+	if result.Type != "image.png" || result.Relation != RelationPathOnly ||
+		!result.Has(FlagExpectedContentMissing) || result.Has(FlagIncomplete) {
+		t.Fatalf("result = %+v, want complete PNG path evidence with missing content", result)
+	}
+}
+
+func TestAnalyzeReaderAndFileMatchAnalyze(t *testing.T) {
+	t.Parallel()
+
+	data := []byte("ODOL")
+	readerResult, err := AnalyzeReader("model.p3d", strings.NewReader(string(data)), ProfileNormal)
+	if err != nil {
+		t.Fatalf("AnalyzeReader: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "model.p3d")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	fileResult, err := AnalyzeFile(path, ProfileNormal)
+	if err != nil {
+		t.Fatalf("AnalyzeFile: %v", err)
+	}
+
+	want := Analyze("model.p3d", data, ProfileNormal)
+	if readerResult != want || fileResult != want {
+		t.Fatalf("Analyze=%+v, Reader=%+v, File=%+v; want equal results", want, readerResult, fileResult)
+	}
+}
+
 func TestAnalyzePreservesPathSpacesAndSeparators(t *testing.T) {
 	t.Parallel()
 
@@ -181,6 +257,9 @@ func TestAnalyzePreservesPathSpacesAndSeparators(t *testing.T) {
 	}
 	if got := Analyze("Texture.PNG ", nil, ProfileFast).Type; got != UnknownID {
 		t.Fatalf("space-suffixed name type = %q, want unknown", got)
+	}
+	if got := Analyze(" config.cpp", nil, ProfileFast).Type; got != "bi.config.rv.cpp" {
+		t.Fatalf("space-prefixed config type = %q, want extension mapping", got)
 	}
 }
 

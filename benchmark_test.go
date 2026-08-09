@@ -18,14 +18,14 @@ type benchmarkSample struct {
 	prefix []byte
 }
 
-// benchmarkSamples provides a mixed 100k-entry workload.
-var benchmarkSamples = buildBenchmarkSamples(100_000)
-
-// benchmarkResultSink keeps benchmark results observable.
-var benchmarkResultSink Result
-
-// benchmarkCountSink keeps aggregate benchmark values observable.
-var benchmarkCountSink int
+var (
+	// benchmarkSamples provides a mixed 100k-entry workload.
+	benchmarkSamples = buildBenchmarkSamples(100_000)
+	// benchmarkResultSink keeps benchmark results observable.
+	benchmarkResultSink Result
+	// benchmarkCountSink keeps aggregate benchmark values observable.
+	benchmarkCountSink int
+)
 
 func BenchmarkRequiredPrefixNormal100K(b *testing.B) {
 	b.ResetTimer()

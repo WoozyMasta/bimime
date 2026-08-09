@@ -14,8 +14,6 @@ type registryRecord struct {
 	magic [][]byte
 	// typ is the public descriptor with explicit classification metadata.
 	typ Type
-	// normalPrefix declares useful bytes for a normal-profile refinement.
-	normalPrefix int
 	// specificity ranks variants within a compatible family.
 	specificity uint8
 }
@@ -268,7 +266,6 @@ var registryDefinitions = []registryRecord{
 			Extensions:  []string{"rvmat"},
 			Traits:      TraitText,
 		},
-		normalPrefix: 4,
 	},
 	{
 		specificity: 1,
@@ -289,7 +286,6 @@ var registryDefinitions = []registryRecord{
 			Extensions:  []string{"p3d"},
 			Traits:      TraitBinary,
 		},
-		normalPrefix: 4,
 	},
 	{
 		typ: Type{
@@ -300,7 +296,6 @@ var registryDefinitions = []registryRecord{
 			Extensions:  []string{"wrp"},
 			Traits:      TraitBinary,
 		},
-		normalPrefix: 4,
 	},
 	{
 		typ: Type{
@@ -720,7 +715,6 @@ var registryDefinitions = []registryRecord{
 			Extensions:  []string{"bisurf"},
 			Traits:      TraitText,
 		},
-		normalPrefix: 4,
 	},
 	{
 		specificity: 1,

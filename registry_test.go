@@ -155,6 +155,80 @@ func TestRegistryCopiesAndMetadata(t *testing.T) {
 	}
 }
 
+func TestStructuredProbeCapabilities(t *testing.T) {
+	t.Parallel()
+
+	if builtinRegistry.thoroughPrefix != thoroughPrefixSize {
+		t.Fatalf("compiled thorough prefix = %d, want %d", builtinRegistry.thoroughPrefix, thoroughPrefixSize)
+	}
+	if err := validateStructuredProbeCapabilities(builtinRegistry); err != nil {
+		t.Fatalf("validate structured probes: %v", err)
+	}
+
+	for _, capability := range structuredProbeCapabilities {
+		if capability.requiredPrefix < 1 || capability.requiredPrefix > thoroughPrefixSize {
+			t.Errorf("probe %d prefix requirement = %d, outside bounds", capability.kind, capability.requiredPrefix)
+		}
+		for _, typeID := range capability.typeIDs {
+			if _, ok := Lookup(typeID); !ok {
+				t.Errorf("probe %d references unregistered type %q", capability.kind, typeID)
+			}
+		}
+	}
+}
+
+func TestStructuredProbeEvidenceSource(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		data []byte
+		want TypeID
+	}{
+		{
+			name: "FORM",
+			data: []byte("FORM\x01\x3c\x74\x09PAC1HEAD"),
+			want: "bi.package.pak",
+		},
+		{
+			name: "RIFF",
+			data: []byte("RIFF\x24\x00\x00\x00WAVE"),
+			want: "audio.wav",
+		},
+		{
+			name: "MP4",
+			data: []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'},
+			want: "video.mp4",
+		},
+		{
+			name: "MP3",
+			data: []byte{0xFF, 0xFB, 0x90, 0x64},
+			want: "audio.mp3",
+		},
+		{
+			name: "DDS",
+			data: []byte("DDS "),
+			want: "image.dds",
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			result := Probe("", testCase.data)
+			if result.ByContent != testCase.want || result.ContentSource != ContentSourceStructure {
+				t.Fatalf("Probe result = %+v, want structured evidence for %q", result, testCase.want)
+			}
+		})
+	}
+
+	tagged := Probe("", []byte("ID3\x04\x00\x00"))
+	if tagged.ByContent != "audio.mp3" || tagged.ContentSource != ContentSourceMagic {
+		t.Fatalf("ID3 result = %+v, want static magic evidence", tagged)
+	}
+}
+
 func TestBuildRegistryRejectsInvalidDefinitions(t *testing.T) {
 	t.Parallel()
 
@@ -184,7 +258,9 @@ func TestBuildRegistryRejectsInvalidDefinitions(t *testing.T) {
 		{
 			name: "missing text or binary trait",
 			definitions: []registryRecord{{typ: Type{
-				ID: "test.one", MIME: "application/octet-stream", Description: "Test type",
+				ID:          "test.one",
+				MIME:        "application/octet-stream",
+				Description: "Test type",
 			}}},
 		},
 		{
@@ -204,7 +280,110 @@ func TestBuildRegistryRejectsInvalidDefinitions(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := buildRegistry(testCase.definitions, testCase.fileNames, nil, nil, nil, nil)
+			_, err := buildRegistry(testCase.definitions, testCase.fileNames, nil, nil, nil, nil, nil)
+			if err == nil || !errors.Is(err, errInvalidRegistry) {
+				t.Fatalf("buildRegistry error = %v, want invalid registry error", err)
+			}
+		})
+	}
+}
+
+func TestBuildRegistryRejectsInvalidNormalProbes(t *testing.T) {
+	t.Parallel()
+
+	pathRecord := registryRecord{typ: Type{
+		ID:          "test.base",
+		Family:      "test.family",
+		MIME:        "application/octet-stream",
+		Description: "Generic type",
+		Extensions:  []string{"base"},
+		Traits:      TraitBinary,
+	}}
+	contentRecord := registryRecord{
+		typ: Type{
+			ID:          "test.child",
+			Family:      "test.family",
+			MIME:        "application/octet-stream",
+			Description: "Specific type",
+			Extensions:  []string{"child"},
+			Traits:      TraitBinary,
+		},
+		magic:       [][]byte{[]byte("MAGC")},
+		specificity: 1,
+	}
+
+	testCases := []struct {
+		name         string
+		pathType     TypeID
+		contentTypes []TypeID
+		required     int
+		content      registryRecord
+	}{
+		{
+			name:         "unknown path",
+			pathType:     "missing.path",
+			contentTypes: []TypeID{"test.child"},
+			required:     4,
+			content:      contentRecord,
+		},
+		{
+			name:         "unbounded requirement",
+			pathType:     "test.base",
+			contentTypes: []TypeID{"test.child"},
+			required:     thoroughPrefixSize + 1,
+			content:      contentRecord,
+		},
+		{
+			name:         "undersized requirement",
+			pathType:     "test.base",
+			contentTypes: []TypeID{"test.child"},
+			required:     3,
+			content:      contentRecord,
+		},
+		{
+			name:         "content without signature",
+			pathType:     "test.base",
+			contentTypes: []TypeID{"test.child"},
+			required:     4,
+			content:      registryRecord{typ: contentRecord.typ},
+		},
+		{
+			name:         "incompatible family",
+			pathType:     "test.base",
+			contentTypes: []TypeID{"test.child"},
+			required:     4,
+			content: registryRecord{
+				typ: Type{
+					ID:          "test.child",
+					Family:      "other.family",
+					MIME:        "application/octet-stream",
+					Description: "Specific type",
+					Extensions:  []string{"child"},
+					Traits:      TraitBinary,
+				},
+				magic:       [][]byte{[]byte("MAGC")},
+				specificity: 1,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := buildRegistry(
+				[]registryRecord{pathRecord, testCase.content},
+				nil,
+				nil,
+				nil,
+				nil,
+				[]normalProbeCapability{{
+					pathType:       testCase.pathType,
+					contentTypes:   testCase.contentTypes,
+					requiredPrefix: testCase.required,
+				}},
+				nil,
+			)
 			if err == nil || !errors.Is(err, errInvalidRegistry) {
 				t.Fatalf("buildRegistry error = %v, want invalid registry error", err)
 			}

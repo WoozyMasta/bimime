@@ -13,6 +13,17 @@ import (
 	"testing"
 )
 
+// noProgressReader simulates a broken reader that never returns bytes or an error.
+type noProgressReader struct{}
+
+// intermittentReader returns empty reads before serving its input.
+type intermittentReader struct {
+	// data is the input returned after the empty reads.
+	data []byte
+	// zeroReads counts empty reads already returned.
+	zeroReads int
+}
+
 // countingReader tracks bytes and calls while serving predefined input.
 type countingReader struct {
 	// data is the input returned by Read.
@@ -34,17 +45,6 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 	reader.offset += n
 
 	return n, nil
-}
-
-// noProgressReader simulates a broken reader that never returns bytes or an error.
-type noProgressReader struct{}
-
-// intermittentReader returns empty reads before serving its input.
-type intermittentReader struct {
-	// data is the input returned after the empty reads.
-	data []byte
-	// zeroReads counts empty reads already returned.
-	zeroReads int
 }
 
 // Read reports no progress on every call.
@@ -111,6 +111,12 @@ func TestAnalyzeHonorsProfileAndRelations(t *testing.T) {
 	normal := Analyze("script.sqf", png, ProfileNormal)
 	if normal.Type != "text.sqf" || normal.ByContent != "" || normal.Relation != RelationPathOnly {
 		t.Fatalf("normal result = %+v, want path-only SQF", normal)
+	}
+
+	normalOverread := Analyze("model.p3d", png, ProfileNormal)
+	if normalOverread.Type != "bi.p3d" || normalOverread.ByContent != "" ||
+		normalOverread.Relation != RelationPathOnly {
+		t.Fatalf("normal over-read result = %+v, want path-only P3D", normalOverread)
 	}
 
 	thorough := Analyze("script.sqf", png, ProfileThorough)

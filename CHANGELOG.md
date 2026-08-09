@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning][].
   classification results that preserve path and content evidence.
 * Registry types now declare text/binary traits and compatible refinement
   families explicitly; contextual and pattern refinements are table-driven.
+* Structured probes declare their targets
+  and byte requirements in one capability catalog;
+  Normal refinements run only declared targets.
 
 ## [0.2.1][] - 2026-04-03
 

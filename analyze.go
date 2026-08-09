@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 )
 
 const (
@@ -19,8 +20,8 @@ const (
 	maxConsecutiveEmptyReads = 100
 )
 
-// RequiredPrefix returns the total prefix length needed for the selected name
-// and profile. Fast always returns zero.
+// RequiredPrefix returns the total prefix length needed for the selected name and profile.
+// Fast always returns zero.
 func RequiredPrefix(name string, profile Profile) int {
 	validateProfile(profile)
 
@@ -30,19 +31,23 @@ func RequiredPrefix(name string, profile Profile) int {
 
 	case ProfileNormal:
 		if record, ok := detectByPathRecord(name); ok {
-			return record.normalPrefix
+			if capability, ok := builtinRegistry.normalProbes[record.typ.ID]; ok {
+				return capability.requiredPrefix
+			}
 		}
 		return 0
 
 	case ProfileThorough:
+		required := builtinRegistry.thoroughPrefix
 		if record, ok := detectByPathRecord(name); ok {
 			for _, refinement := range pathPatternRefinements {
 				if record.typ.ID == refinement.pathType {
-					return semanticPrefixSize
+					required = max(required, refinement.requiredPrefix)
+					break
 				}
 			}
 		}
-		return thoroughPrefixSize
+		return required
 
 	default:
 		panic("unreachable profile")
@@ -71,31 +76,37 @@ func Analyze(name string, prefix []byte, profile Profile) Result {
 		return result
 	}
 
-	contentRecord, hasContent := detectByMagicRecord(prefix)
-	contentSource := ContentSourceMagic
-	if hasContent && isStructuredContentMatch(contentRecord.typ.ID, prefix) {
-		contentSource = ContentSourceStructure
-	}
-
 	if profile == ProfileNormal {
 		if !hasPath || required == 0 {
 			return result
 		}
 
+		contentRecord, hasContent := detectNormalProbeRecord(prefix, pathRecord.typ.ID)
+		contentSource := ContentSourceMagic
 		if hasContent {
 			contentRecord = specializeRAPRecordForExtension(contentRecord, string(pathRecord.typ.ID))
 			if contentRecord.typ.Family != pathRecord.typ.Family {
 				hasContent = false
 			}
 		}
-	} else if hasPath && !hasContent {
+		if hasContent {
+			result.ByContent = contentRecord.typ.ID
+			result.ContentSource = contentSource
+		}
+
+		resolveEvidence(&result, pathRecord, hasPath, contentRecord, hasContent)
+		return result
+	}
+
+	contentRecord, contentSource, hasContent := detectByMagicRecord(prefix)
+	if hasPath && !hasContent {
 		if refined, ok := matchPathPattern(pathRecord, prefix); ok {
 			contentRecord = refined
 			hasContent = true
 			contentSource = ContentSourcePattern
 		}
 	}
-	if profile == ProfileThorough && hasPath && hasContent {
+	if hasPath && hasContent {
 		contentRecord = specializeRAPRecordForExtension(contentRecord, string(pathRecord.typ.ID))
 	}
 
@@ -268,50 +279,11 @@ func hasContentVerifier(pathRecord registryRecord) bool {
 			return true
 		}
 	}
-
-	switch pathRecord.typ.ID {
-	case
-		"audio.mp3",
-		"audio.wav",
-		"image.webp",
-		"image.dds",
-		"image.edds",
-		"video.mp4",
-		"bi.package.pak",
-		"bi.db.rdb",
-		"bi.world.smd",
-		"bi.font.fnt",
-		"bi.animation.anm",
-		"bi.object.xob":
-		return true
-
-	default:
-		return false
+	for _, capability := range structuredProbeCapabilities {
+		if slices.Contains(capability.typeIDs, pathRecord.typ.ID) {
+			return true
+		}
 	}
-}
 
-// isStructuredContentMatch identifies detections implemented by structural probes.
-func isStructuredContentMatch(typeID TypeID, prefix []byte) bool {
-	if typeID == "audio.mp3" && len(prefix) >= 3 && string(prefix[:3]) == "ID3" {
-		return false
-	}
-	switch typeID {
-	case
-		"audio.mp3",
-		"audio.wav",
-		"image.webp",
-		"image.dds",
-		"image.edds",
-		"video.mp4",
-		"bi.package.pak",
-		"bi.db.rdb",
-		"bi.world.smd",
-		"bi.font.fnt",
-		"bi.animation.anm",
-		"bi.object.xob":
-		return true
-
-	default:
-		return false
-	}
+	return false
 }

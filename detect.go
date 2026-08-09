@@ -13,6 +13,107 @@ import (
 
 const maxShortDescriptionLen = 60
 
+const (
+	structuredProbeFORM structuredProbeKind = iota
+	structuredProbeRIFF
+	structuredProbeMP4
+	structuredProbeMP3
+	structuredProbeDDS
+)
+
+// contextualRefinements maps contextual format evidence to its specialized type.
+var contextualRefinements = map[contextualRefinementKey]TypeID{
+	{pathType: "bi.config.main.bin", contentType: "bi.rap"}: "bi.config.main.bin",
+	{pathType: "bi.mod.bin", contentType: "bi.rap"}:         "bi.mod.bin",
+	{pathType: "bi.rvmat", contentType: "bi.rap"}:           "bi.rvmat.bin",
+	{pathType: "bi.surface.bisurf", contentType: "bi.rap"}:  "bi.surface.bisurf.bin",
+}
+
+// pathPatternRefinements declares path-scoped semantic content specializations.
+var pathPatternRefinements = []pathPatternRefinement{
+	{
+		pathType:       "text.cfg",
+		targetType:     "bi.model.cfg",
+		requiredPrefix: semanticPrefixSize,
+	},
+	{
+		pathType:       "text.xml",
+		targetType:     "bi.ce.ceproject-config",
+		requiredPrefix: semanticPrefixSize,
+	},
+}
+
+// normalProbeCapabilities declares the limited refinements enabled by ProfileNormal.
+var normalProbeCapabilities = []normalProbeCapability{
+	{
+		pathType:       "bi.p3d",
+		contentTypes:   []TypeID{"bi.p3d.odol", "bi.p3d.mlod"},
+		requiredPrefix: 4,
+	},
+	{
+		pathType:       "bi.wrp",
+		contentTypes:   []TypeID{"bi.wrp.oprw", "bi.wrp.8wvr", "bi.wrp.9vbw", "bi.wrp.0wzd"},
+		requiredPrefix: 4,
+	},
+	{
+		pathType:       "bi.rvmat",
+		contentTypes:   []TypeID{"bi.rap"},
+		requiredPrefix: 4,
+	},
+	{
+		pathType:       "bi.surface.bisurf",
+		contentTypes:   []TypeID{"bi.rap"},
+		requiredPrefix: 4,
+	},
+}
+
+// structuredProbeCapabilities declares non-static global content detectors.
+var structuredProbeCapabilities = []structuredProbeCapability{
+	{
+		kind:           structuredProbeFORM,
+		requiredPrefix: 16,
+		source:         ContentSourceStructure,
+		typeIDs: []TypeID{
+			"bi.package.pak",
+			"bi.db.rdb",
+			"bi.world.smd",
+			"bi.font.fnt",
+			"bi.object.xob",
+			"bi.animation.anm",
+		},
+	},
+	{
+		kind:           structuredProbeRIFF,
+		requiredPrefix: 12,
+		source:         ContentSourceStructure,
+		typeIDs:        []TypeID{"audio.wav", "image.webp"},
+	},
+	{
+		kind:           structuredProbeMP4,
+		requiredPrefix: 12,
+		source:         ContentSourceStructure,
+		typeIDs:        []TypeID{"video.mp4"},
+	},
+	{
+		kind:           structuredProbeMP3,
+		requiredPrefix: 4,
+		source:         ContentSourceStructure,
+		typeIDs:        []TypeID{"audio.mp3"},
+	},
+	{
+		kind:           structuredProbeDDS,
+		requiredPrefix: 156,
+		source:         ContentSourceStructure,
+		typeIDs:        []TypeID{"image.dds", "image.edds"},
+	},
+}
+
+// filePrefixRecords stores validated prefix mappings in stable matching order.
+var filePrefixRecords = builtinRegistry.filePrefixes
+
+// fileSuffixRecords stores validated suffix mappings in stable matching order.
+var fileSuffixRecords = builtinRegistry.fileSuffixes
+
 // filePrefixRecord stores one filename-prefix mapping to a type id.
 type filePrefixRecord struct {
 	prefix string
@@ -25,8 +126,7 @@ type fileSuffixRecord struct {
 	typeID string
 }
 
-// contextualRefinementKey identifies a path and content pair that refines to a
-// format-specific type.
+// contextualRefinementKey identifies a path and content pair that refines to a format-specific type.
 type contextualRefinementKey struct {
 	// pathType is the type inferred from the logical name.
 	pathType TypeID
@@ -34,34 +134,40 @@ type contextualRefinementKey struct {
 	contentType TypeID
 }
 
-// contextualRefinements maps contextual format evidence to its specialized type.
-var contextualRefinements = map[contextualRefinementKey]TypeID{
-	{pathType: "bi.config.main.bin", contentType: "bi.rap"}: "bi.config.main.bin",
-	{pathType: "bi.mod.bin", contentType: "bi.rap"}:         "bi.mod.bin",
-	{pathType: "bi.rvmat", contentType: "bi.rap"}:           "bi.rvmat.bin",
-	{pathType: "bi.surface.bisurf", contentType: "bi.rap"}:  "bi.surface.bisurf.bin",
+// normalProbeCapability defines content types used to refine one path type in Normal.
+type normalProbeCapability struct {
+	// pathType is the path classification that enables the probe.
+	pathType TypeID
+	// contentTypes lists static content types eligible for this refinement.
+	contentTypes []TypeID
+	// requiredPrefix is the bounded prefix needed by the probe.
+	requiredPrefix int
 }
 
-// pathPatternRefinement identifies a path-scoped pattern that specializes a
-// generic path type.
+// pathPatternRefinement identifies a path-scoped pattern that specializes a generic path type.
 type pathPatternRefinement struct {
 	// pathType is the generic type inferred from the logical name.
 	pathType TypeID
 	// targetType is selected when its registered pattern matches.
 	targetType TypeID
+	// requiredPrefix is the bounded sample needed by this pattern.
+	requiredPrefix int
 }
 
-// pathPatternRefinements declares path-scoped semantic content specializations.
-var pathPatternRefinements = []pathPatternRefinement{
-	{pathType: "text.cfg", targetType: "bi.model.cfg"},
-	{pathType: "text.xml", targetType: "bi.ce.ceproject-config"},
+// structuredProbeCapability binds a structured detector to its byte and type requirements.
+type structuredProbeCapability struct {
+	// typeIDs lists the types this detector can identify.
+	typeIDs []TypeID
+	// requiredPrefix is the maximum prefix needed to run this detector fully.
+	requiredPrefix int
+	// kind selects the detector implementation.
+	kind structuredProbeKind
+	// source identifies the evidence kind produced by this detector.
+	source ContentSource
 }
 
-// filePrefixRecords stores validated prefix mappings in stable matching order.
-var filePrefixRecords = builtinRegistry.filePrefixes
-
-// fileSuffixRecords stores validated suffix mappings in stable matching order.
-var fileSuffixRecords = builtinRegistry.fileSuffixes
+// structuredProbeKind identifies one detector with non-static parsing rules.
+type structuredProbeKind uint8
 
 // Registry returns all registered game types.
 func Registry() []Type {
@@ -237,40 +343,21 @@ func fileNameKey(path string) string {
 	return lowerKey(path[start:])
 }
 
-// detectByMagicRecord resolves type by signature matching without cloning.
-func detectByMagicRecord(prefix []byte) (registryRecord, bool) {
+// detectByMagicRecord resolves static and structured signatures without cloning.
+func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 	if len(prefix) == 0 {
-		return registryRecord{}, false
+		return registryRecord{}, ContentSourceNone, false
 	}
 
-	if typeID, ok := detectFORMFamilyTypeID(prefix); ok {
-		record, ok := typeByID[typeID]
-		if ok {
-			return record, true
+	for _, capability := range structuredProbeCapabilities {
+		typeID, ok := runStructuredProbe(capability.kind, prefix)
+		if !ok || !slices.Contains(capability.typeIDs, typeID) {
+			continue
 		}
-	}
-	if typeID, ok := detectRIFFFamilyTypeID(prefix); ok {
-		record, ok := typeByID[typeID]
+
+		record, ok := typeByID[string(typeID)]
 		if ok {
-			return record, true
-		}
-	}
-	if typeID, ok := detectMP4TypeID(prefix); ok {
-		record, ok := typeByID[typeID]
-		if ok {
-			return record, true
-		}
-	}
-	if typeID, ok := detectMP3TypeID(prefix); ok {
-		record, ok := typeByID[typeID]
-		if ok {
-			return record, true
-		}
-	}
-	if typeID, ok := detectDDSFamilyTypeID(prefix); ok {
-		record, ok := typeByID[typeID]
-		if ok {
-			return record, true
+			return record, capability.source, true
 		}
 	}
 
@@ -284,17 +371,70 @@ func detectByMagicRecord(prefix []byte) (registryRecord, bool) {
 
 		record, ok := typeByID[signature.typeID]
 		if !ok {
-			return registryRecord{}, false
+			return registryRecord{}, ContentSourceNone, false
 		}
 
-		return record, true
+		return record, ContentSourceMagic, true
+	}
+
+	return registryRecord{}, ContentSourceNone, false
+}
+
+// detectNormalProbeRecord runs only the static targets enabled for one path type.
+func detectNormalProbeRecord(prefix []byte, pathType TypeID) (registryRecord, bool) {
+	capability, ok := builtinRegistry.normalProbes[pathType]
+	if !ok || len(prefix) == 0 {
+		return registryRecord{}, false
+	}
+
+	for _, signature := range builtinRegistry.magic {
+		if !slices.Contains(capability.contentTypes, TypeID(signature.typeID)) ||
+			len(prefix) < len(signature.signature) ||
+			!slices.Equal(prefix[:len(signature.signature)], signature.signature) {
+			continue
+		}
+
+		record, ok := builtinRegistry.byID[signature.typeID]
+		if ok {
+			return record, true
+		}
 	}
 
 	return registryRecord{}, false
 }
 
-// detectFORMFamilyTypeID detects FORM-based payloads using 4-byte form type at
-// offset 8 and optional subtype marker at offset 12.
+// runStructuredProbe dispatches one declared capability to its format parser.
+func runStructuredProbe(kind structuredProbeKind, prefix []byte) (TypeID, bool) {
+	var (
+		id string
+		ok bool
+	)
+
+	switch kind {
+	case structuredProbeFORM:
+		id, ok = detectFORMFamilyTypeID(prefix)
+
+	case structuredProbeRIFF:
+		id, ok = detectRIFFFamilyTypeID(prefix)
+
+	case structuredProbeMP4:
+		id, ok = detectMP4TypeID(prefix)
+
+	case structuredProbeMP3:
+		id, ok = detectMP3TypeID(prefix)
+
+	case structuredProbeDDS:
+		id, ok = detectDDSFamilyTypeID(prefix)
+
+	default:
+		return "", false
+	}
+
+	return TypeID(id), ok
+}
+
+// detectFORMFamilyTypeID detects FORM-based payloads using 4-byte form type
+// at offset 8 and optional subtype marker at offset 12.
 func detectFORMFamilyTypeID(prefix []byte) (string, bool) {
 	if len(prefix) < 12 {
 		return "", false
@@ -331,8 +471,7 @@ func detectFORMFamilyTypeID(prefix []byte) (string, bool) {
 	return "", false
 }
 
-// detectRIFFFamilyTypeID detects RIFF-based media payloads using form type at
-// offset 8.
+// detectRIFFFamilyTypeID detects RIFF-based media payloads using form type at offset 8.
 func detectRIFFFamilyTypeID(prefix []byte) (string, bool) {
 	if len(prefix) < 12 {
 		return "", false
@@ -394,6 +533,7 @@ func detectMP3TypeID(prefix []byte) (string, bool) {
 	layer := (prefix[1] >> 1) & 0x03
 	bitrate := (prefix[2] >> 4) & 0x0F
 	sampleRate := (prefix[2] >> 2) & 0x03
+
 	if version == 0x01 || layer == 0 || bitrate == 0 || bitrate == 0x0F || sampleRate == 0x03 {
 		return "", false
 	}

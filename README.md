@@ -1,74 +1,30 @@
 # bimime
 
-`bimime` classifies BI game file types
-from logical names and bounded content prefixes.
-The package uses the same analysis rules for filesystem files,
-readers, memory buffers, and archive entries.
+[bimime][] is a Go library for classifying BI game files
+from logical names and bounded content probes.
+It reports path and content evidence
+without claiming to validate the complete file.
 
-## Profiles
+## Features
 
-Profiles set the evidence and I/O budget. They do not validate complete files.
+* Fast, Normal, and Thorough profiles with bounded read requirements.
+* Classification from paths, readers, files, and caller-owned data.
+* Separate path and content evidence, including conflicts and refinements.
+* Stable type identifiers and neutral traits for consumer-owned policy.
 
-* `ProfileFast` uses path evidence only and requires no content reads.
-* `ProfileNormal` reads only for useful refinements of ambiguous BI types.
-* `ProfileThorough` enables bounded content discovery and path-scoped patterns.
+## Installation
 
-## Filesystem
-
-Use `AnalyzeFile` when the package should open the path
-and read its planned prefix:
-
-```go
-result, err := bimime.AnalyzeFile("terrain.wrp", bimime.ProfileNormal)
-if err != nil {
-    return err
-}
-
-fmt.Println(result.Type, result.Relation)
+```sh
+go get github.com/woozymasta/bimime@latest
 ```
 
-## Caller-owned storage
+Requires Go 1.21 or later.
 
-Use `RequiredPrefix` and `Analyze`
-when the caller owns file, archive, or memory storage.
-`RequiredPrefix` is the total prefix length from offset zero.
+## Documentation
 
-```go
-size := bimime.RequiredPrefix(entry.Name, bimime.ProfileNormal)
-prefix, err := entry.ReadPrefix(size)
-if err != nil {
-    return err
-}
+See the [API documentation][bimime] for package usage.
+Runnable examples are maintained in [`example_test.go`](example_test.go).
 
-result := bimime.Analyze(entry.Name, prefix, bimime.ProfileNormal)
-```
+<!-- links -->
 
-`ProfileFast` always returns zero.
-`ProfileNormal` requests content for
-ambiguous P3D, WRP, RVMat, and BISurf classifications.
-`ProfileThorough` uses a bounded global binary prefix
-and requests a larger sample only for registered path-scoped text refinements.
-
-## Results and registry
-
-`Result` keeps the final `TypeID`, path and content evidence, their relation,
-the content probe source, planned prefix length, and completeness flags.
-A conflict does not imply full-file validation;
-consumers can decide how to handle `RelationConflict`.
-
-`Lookup` and `Registry` return safe copies of type descriptors.
-Consumers can key their own policy by `TypeID`
-or use neutral `FamilyID` and `Trait` values:
-
-```go
-var compressionHint = map[bimime.TypeID]bool{
-    "text.sqf": true,
-    "audio.ogg": false,
-}
-
-_ = compressionHint[result.Type]
-```
-
-The package describes file identity and objective traits.
-Consumer-specific policy such as compression decisions
-belongs in the consuming package.
+[bimime]: https://pkg.go.dev/github.com/woozymasta/bimime

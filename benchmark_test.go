@@ -27,57 +27,26 @@ var (
 	benchmarkCountSink int
 )
 
-func BenchmarkRequiredPrefixNormal100K(b *testing.B) {
-	b.ResetTimer()
-	for iteration := 0; iteration < b.N; iteration++ {
-		count := 0
-		for _, sample := range benchmarkSamples {
-			if RequiredPrefix(sample.name, ProfileNormal) > 0 {
-				count++
+func BenchmarkAnalyze100K(b *testing.B) {
+	profiles := []struct {
+		name    string
+		profile Profile
+	}{
+		{name: "Fast", profile: ProfileFast},
+		{name: "Normal", profile: ProfileNormal},
+		{name: "Thorough", profile: ProfileThorough},
+	}
+
+	for _, testCase := range profiles {
+		testCase := testCase
+		b.Run(testCase.name, func(b *testing.B) {
+			b.ResetTimer()
+			for iteration := 0; iteration < b.N; iteration++ {
+				for _, sample := range benchmarkSamples {
+					benchmarkResultSink = Analyze(sample.name, sample.prefix, testCase.profile)
+				}
 			}
-		}
-		benchmarkCountSink = count
-	}
-}
-
-func BenchmarkAnalyzeFast100K(b *testing.B) {
-	b.ResetTimer()
-	for iteration := 0; iteration < b.N; iteration++ {
-		for _, sample := range benchmarkSamples {
-			benchmarkResultSink = Analyze(sample.name, sample.prefix, ProfileFast)
-		}
-	}
-}
-
-func BenchmarkAnalyzeNormal100K(b *testing.B) {
-	b.ResetTimer()
-	for iteration := 0; iteration < b.N; iteration++ {
-		for _, sample := range benchmarkSamples {
-			benchmarkResultSink = Analyze(sample.name, sample.prefix, ProfileNormal)
-		}
-	}
-}
-
-func BenchmarkAnalyzeThorough100K(b *testing.B) {
-	b.ResetTimer()
-	for iteration := 0; iteration < b.N; iteration++ {
-		for _, sample := range benchmarkSamples {
-			benchmarkResultSink = Analyze(sample.name, sample.prefix, ProfileThorough)
-		}
-	}
-}
-
-func BenchmarkAnalyzeReaderP3D(b *testing.B) {
-	data := []byte("ODOL plus trailing data")
-	reader := bytes.NewReader(data)
-	b.ResetTimer()
-	for iteration := 0; iteration < b.N; iteration++ {
-		reader.Reset(data)
-		result, err := AnalyzeReader("model.p3d", reader, ProfileNormal)
-		if err != nil {
-			b.Fatal(err)
-		}
-		benchmarkResultSink = result
+		})
 	}
 }
 

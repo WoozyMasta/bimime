@@ -34,6 +34,28 @@ type countingReader struct {
 	calls int
 }
 
+// oneByteReader returns no more than one byte per call.
+type oneByteReader struct {
+	// data is the remaining input.
+	data []byte
+	// calls counts reads performed by the analyzer.
+	calls int
+}
+
+// dataEOFReader returns its remaining bytes and io.EOF in one call.
+type dataEOFReader struct {
+	// data is the remaining input.
+	data []byte
+}
+
+// partialErrorReader returns its remaining bytes together with a read error.
+type partialErrorReader struct {
+	// data is the remaining input.
+	data []byte
+	// err is returned with the final bytes.
+	err error
+}
+
 // Read serves input and records the amount consumed.
 func (reader *countingReader) Read(buffer []byte) (int, error) {
 	reader.calls++
@@ -45,6 +67,35 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 	reader.offset += n
 
 	return n, nil
+}
+
+// Read serves at most one byte from the remaining input.
+func (reader *oneByteReader) Read(buffer []byte) (int, error) {
+	reader.calls++
+	if len(reader.data) == 0 {
+		return 0, io.EOF
+	}
+
+	n := copy(buffer[:min(len(buffer), 1)], reader.data)
+	reader.data = reader.data[n:]
+
+	return n, nil
+}
+
+// Read returns the remaining bytes and EOF, following the io.Reader contract.
+func (reader *dataEOFReader) Read(buffer []byte) (int, error) {
+	n := copy(buffer, reader.data)
+	reader.data = reader.data[n:]
+
+	return n, io.EOF
+}
+
+// Read returns the remaining bytes and the configured error.
+func (reader *partialErrorReader) Read(buffer []byte) (int, error) {
+	n := copy(buffer, reader.data)
+	reader.data = reader.data[n:]
+
+	return n, reader.err
 }
 
 // Read reports no progress on every call.
@@ -199,6 +250,70 @@ func TestAnalyzeReaderShortInputAndFileFastPath(t *testing.T) {
 	}
 	if result.Type != "image.png" || result.RequiredPrefix != 0 {
 		t.Fatalf("file fast-path result = %+v", result)
+	}
+}
+
+func TestAnalyzeReaderOneByteReads(t *testing.T) {
+	t.Parallel()
+
+	reader := &oneByteReader{data: []byte("ODOL trailing data")}
+	result, err := AnalyzeReader("model.p3d", reader, ProfileNormal)
+	if err != nil {
+		t.Fatalf("AnalyzeReader: %v", err)
+	}
+	if result.Type != "bi.p3d.odol" || reader.calls != 4 || string(reader.data) != " trailing data" {
+		t.Fatalf("result = %+v, calls = %d, remaining = %q; want ODOL after four one-byte reads", result, reader.calls, reader.data)
+	}
+}
+
+func TestAnalyzeReaderEOFBehavior(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		reader io.Reader
+	}{
+		{name: "immediate EOF", reader: strings.NewReader("")},
+		{name: "data with EOF", reader: &dataEOFReader{data: []byte("OD")}},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := AnalyzeReader("model.p3d", testCase.reader, ProfileNormal)
+			if err != nil {
+				t.Fatalf("AnalyzeReader: %v", err)
+			}
+			if result.Type != "bi.p3d" || !result.Has(FlagIncomplete) {
+				t.Fatalf("result = %+v, want incomplete generic P3D", result)
+			}
+		})
+	}
+}
+
+func TestAnalyzeReaderReturnsErrorAfterPartialData(t *testing.T) {
+	t.Parallel()
+
+	readErr := errors.New("partial read failure")
+	reader := &partialErrorReader{data: []byte("OD"), err: readErr}
+	_, err := AnalyzeReader("model.p3d", reader, ProfileNormal)
+	if !errors.Is(err, readErr) {
+		t.Fatalf("AnalyzeReader error = %v, want partial read failure", err)
+	}
+}
+
+func TestAnalyzeReaderFastSkipsRead(t *testing.T) {
+	t.Parallel()
+
+	reader := &countingReader{data: []byte("ODOL")}
+	result, err := AnalyzeReader("model.p3d", reader, ProfileFast)
+	if err != nil {
+		t.Fatalf("AnalyzeReader: %v", err)
+	}
+	if reader.calls != 0 || result.Type != "bi.p3d" || result.RequiredPrefix != 0 {
+		t.Fatalf("reader calls = %d, result = %+v; want no reads and path-only P3D", reader.calls, result)
 	}
 }
 

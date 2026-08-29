@@ -5,6 +5,7 @@
 package bimime
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -202,6 +203,27 @@ func TestAnalyzePatternRefinement(t *testing.T) {
 	}
 	if !result.Has(FlagIncomplete) {
 		t.Fatal("short pattern sample must be marked incomplete")
+	}
+}
+
+func TestAnalyzeHonorsRequiredPrefixBudget(t *testing.T) {
+	t.Parallel()
+
+	name := "vehicle.cfg"
+	required := RequiredPrefix(name, ProfileThorough)
+	prefix := bytes.Repeat([]byte{' '}, required+500)
+	copy(prefix[4500:], []byte("class CfgModels"))
+
+	direct := Analyze(name, prefix, ProfileThorough)
+	fromReader, err := AnalyzeReader(name, bytes.NewReader(prefix), ProfileThorough)
+	if err != nil {
+		t.Fatalf("AnalyzeReader: %v", err)
+	}
+	if direct != fromReader {
+		t.Fatalf("Analyze=%+v, AnalyzeReader=%+v; want equal results within the %d-byte budget", direct, fromReader, required)
+	}
+	if direct.Type != "text.cfg" || direct.ByContent != "" || direct.Has(FlagIncomplete) {
+		t.Fatalf("Analyze result = %+v, want complete path-only config within the prefix budget", direct)
 	}
 }
 

@@ -57,6 +57,10 @@ func RequiredPrefix(name string, profile Profile) int {
 // Analyze classifies a logical name and caller-owned prefix without performing I/O.
 func Analyze(name string, prefix []byte, profile Profile) Result {
 	required := RequiredPrefix(name, profile)
+	if len(prefix) > required {
+		prefix = prefix[:required]
+	}
+
 	result := Result{Type: UnknownID, RequiredPrefix: required}
 	if len(prefix) < required {
 		result.Flags |= FlagIncomplete

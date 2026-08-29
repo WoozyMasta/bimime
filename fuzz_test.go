@@ -9,6 +9,9 @@ import (
 	"testing"
 )
 
+// maxFuzzPrefixSize keeps fuzz cases bounded while exceeding semantic probes.
+const maxFuzzPrefixSize = 8192
+
 // FuzzRequiredPrefix checks arbitrary logical paths for panics and unbounded plans.
 func FuzzRequiredPrefix(f *testing.F) {
 	f.Add("dir/model.p3d", uint8(ProfileNormal))
@@ -31,8 +34,8 @@ func FuzzAnalyze(f *testing.F) {
 	f.Add("", []byte{}, uint8(ProfileFast))
 
 	f.Fuzz(func(t *testing.T, name string, prefix []byte, rawProfile uint8) {
-		if len(prefix) > semanticPrefixSize {
-			prefix = prefix[:semanticPrefixSize]
+		if len(prefix) > maxFuzzPrefixSize {
+			prefix = prefix[:maxFuzzPrefixSize]
 		}
 		profile := Profile(rawProfile % 3)
 		first := Analyze(name, prefix, profile)
@@ -48,10 +51,13 @@ func FuzzAnalyzeReaderEquivalence(f *testing.F) {
 	f.Add("model.p3d", []byte("ODOL plus data"), uint8(ProfileNormal))
 	f.Add("script.sqf", []byte("\x89PNG\r\n\x1a\n"), uint8(ProfileThorough))
 	f.Add("unknown.xyz", []byte("payload"), uint8(ProfileFast))
+	latePattern := bytes.Repeat([]byte{' '}, 4500+len("class CfgModels"))
+	copy(latePattern[4500:], []byte("class CfgModels"))
+	f.Add("vehicle.cfg", latePattern, uint8(ProfileThorough))
 
 	f.Fuzz(func(t *testing.T, name string, input []byte, rawProfile uint8) {
-		if len(input) > semanticPrefixSize {
-			input = input[:semanticPrefixSize]
+		if len(input) > maxFuzzPrefixSize {
+			input = input[:maxFuzzPrefixSize]
 		}
 		profile := Profile(rawProfile % 3)
 		direct := Analyze(name, input, profile)

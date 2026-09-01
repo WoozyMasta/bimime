@@ -144,6 +144,10 @@ func buildRegistry(
 			registry.byExtension[ext] = record
 		}
 
+		if len(record.magic) > 0 && record.magicScope != probeDiscover && record.magicScope != probeVerify {
+			return compiledRegistry{}, registryErrorf("type %q has invalid static probe scope %d", id, record.magicScope)
+		}
+
 		for signatureIndex, signature := range record.magic {
 			if len(signature) == 0 {
 				return compiledRegistry{}, registryErrorf("type %q has empty magic signature at index %d", id, signatureIndex)
@@ -234,6 +238,9 @@ func validateStructuredProbeCapabilities(registry compiledRegistry) error {
 		seen[capability.kind] = struct{}{}
 		if capability.source != ContentSourceStructure || len(capability.typeIDs) == 0 {
 			return registryErrorf("structured probe %d has no source or type targets", capability.kind)
+		}
+		if capability.scope != probeDiscover && capability.scope != probeVerify {
+			return registryErrorf("structured probe %d has invalid scope %d", capability.kind, capability.scope)
 		}
 
 		seenTargets := make(map[TypeID]struct{}, len(capability.typeIDs))
@@ -359,6 +366,9 @@ func validateRefinements(
 	}
 
 	for _, refinement := range patterns {
+		if refinement.scope != probeRefine {
+			return registryErrorf("path-pattern refinement has invalid scope %d", refinement.scope)
+		}
 		if refinement.requiredPrefix < 1 || refinement.requiredPrefix > semanticPrefixSize {
 			return registryErrorf(
 				"path-pattern refinement has invalid prefix requirement %d",
@@ -386,6 +396,9 @@ func validateRefinements(
 
 	seenNormalPaths := make(map[TypeID]struct{}, len(normalProbes))
 	for _, capability := range normalProbes {
+		if capability.scope != probeRefine {
+			return registryErrorf("normal probe for %q has invalid scope %d", capability.pathType, capability.scope)
+		}
 		pathRecord, ok := registry.byID[string(capability.pathType)]
 		if !ok {
 			return registryErrorf("normal probe references unknown path type %q", capability.pathType)

@@ -30,7 +30,6 @@ func TestProbeContentDetectors(t *testing.T) {
 		{name: "edds", data: edds, want: "image.edds"},
 		{name: "ogg", data: []byte("OggS\x00\x02"), want: "audio.ogg"},
 		{name: "mp3-id3", data: []byte("ID3\x04\x00\x00"), want: "audio.mp3"},
-		{name: "mp3-frame", data: []byte{0xFF, 0xFB, 0x90, 0x64}, want: "audio.mp3"},
 		{name: "wav", data: []byte("RIFF\x24\x00\x00\x00WAVE"), want: "audio.wav"},
 		{name: "mp4", data: []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}, want: "video.mp4"},
 		{name: "pak-form", data: []byte("FORM\x01\x3c\x74\x09PAC1HEAD"), want: "bi.package.pak"},
@@ -70,9 +69,49 @@ func TestProbeRejectsInvalidMP3Frame(t *testing.T) {
 		{0xFF, 0xFB, 0xF0, 0x64},
 		{0xFF, 0xFB, 0x9C, 0x64},
 	} {
-		if result := Probe("", prefix); result.Type != UnknownID {
-			t.Errorf("Probe(% x) = %q, want unknown", prefix, result.Type)
+		result := Analyze("track.mp3", prefix, ProfileThorough)
+		if result.ByContent != "" || result.Relation != RelationPathOnly {
+			t.Errorf("Analyze(track.mp3, % x) = %+v, want no MP3 content evidence", prefix, result)
 		}
+	}
+}
+
+func TestWeakSignaturesRequirePathContext(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name       string
+		path       string
+		prefix     []byte
+		want       TypeID
+		wantSource ContentSource
+	}{
+		{name: "PAA", path: "texture.paa", prefix: []byte{1, 255}, want: "image.paa", wantSource: ContentSourceMagic},
+		{name: "BMP", path: "image.bmp", prefix: []byte("BM"), want: "image.bmp", wantSource: ContentSourceMagic},
+		{name: "MP3 frame", path: "track.mp3", prefix: []byte{0xFF, 0xFB, 0x90, 0x64}, want: "audio.mp3", wantSource: ContentSourceStructure},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			global := Probe("unknown.xyz", testCase.prefix)
+			if global.Type != UnknownID || global.ByContent != "" {
+				t.Fatalf("global Probe result = %+v, want no discovery from weak signature", global)
+			}
+
+			verified := Analyze(testCase.path, testCase.prefix, ProfileThorough)
+			if verified.Type != testCase.want || verified.ByContent != testCase.want ||
+				verified.ContentSource != testCase.wantSource || verified.Relation != RelationConfirmed {
+				t.Fatalf("path verification = %+v, want confirmation of %q", verified, testCase.want)
+			}
+		})
+	}
+
+	id3 := Probe("unknown.xyz", []byte("ID3\x04\x00\x00"))
+	if id3.Type != "audio.mp3" || id3.ByContent != "audio.mp3" {
+		t.Fatalf("ID3 discovery = %+v, want globally discovered MP3", id3)
 	}
 }
 
@@ -201,11 +240,6 @@ func TestStructuredProbeEvidenceSource(t *testing.T) {
 			want: "video.mp4",
 		},
 		{
-			name: "MP3",
-			data: []byte{0xFF, 0xFB, 0x90, 0x64},
-			want: "audio.mp3",
-		},
-		{
 			name: "DDS",
 			data: []byte("DDS "),
 			want: "image.dds",
@@ -221,6 +255,11 @@ func TestStructuredProbeEvidenceSource(t *testing.T) {
 				t.Fatalf("Probe result = %+v, want structured evidence for %q", result, testCase.want)
 			}
 		})
+	}
+
+	frame := Analyze("track.mp3", []byte{0xFF, 0xFB, 0x90, 0x64}, ProfileThorough)
+	if frame.ByContent != "audio.mp3" || frame.ContentSource != ContentSourceStructure {
+		t.Fatalf("MP3 frame verification = %+v, want structured evidence for audio.mp3", frame)
 	}
 
 	tagged := Probe("", []byte("ID3\x04\x00\x00"))
@@ -379,6 +418,7 @@ func TestBuildRegistryRejectsInvalidNormalProbes(t *testing.T) {
 				nil,
 				[]normalProbeCapability{{
 					pathType:       testCase.pathType,
+					scope:          probeRefine,
 					contentTypes:   testCase.contentTypes,
 					requiredPrefix: testCase.required,
 				}},

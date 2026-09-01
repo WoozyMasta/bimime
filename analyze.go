@@ -104,6 +104,9 @@ func Analyze(name string, prefix []byte, profile Profile) Result {
 
 	contentRecord, contentSource, hasContent := detectByMagicRecord(prefix)
 	if hasPath && !hasContent {
+		contentRecord, contentSource, hasContent = detectVerifyRecord(prefix, pathRecord.typ.ID)
+	}
+	if hasPath && !hasContent {
 		if refined, ok := matchPathPattern(pathRecord, prefix); ok {
 			contentRecord = refined
 			hasContent = true
@@ -209,7 +212,7 @@ func readPrefix(reader io.Reader, limit int) ([]byte, error) {
 // matchPathPattern returns a registered semantic refinement for a path type.
 func matchPathPattern(pathRecord registryRecord, prefix []byte) (registryRecord, bool) {
 	for _, refinement := range pathPatternRefinements {
-		if pathRecord.typ.ID != refinement.pathType ||
+		if refinement.scope != probeRefine || pathRecord.typ.ID != refinement.pathType ||
 			!matchContentPatternForType(string(refinement.targetType), prefix) {
 			continue
 		}

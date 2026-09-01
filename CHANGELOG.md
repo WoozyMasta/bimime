@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning][].
 * Structured probes declare their targets
   and byte requirements in one capability catalog;
   Normal refinements run only declared targets.
+* Weak PAA/BMP signatures and raw MP3 frame headers verify matching paths
+  without enabling global content discovery.
 
 ## [0.2.1][] - 2026-04-03
 

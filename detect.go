@@ -13,6 +13,18 @@ import (
 
 const maxShortDescriptionLen = 60
 
+// probeScope controls when a detector is allowed to contribute evidence.
+type probeScope uint8
+
+const (
+	// probeDiscover allows a probe to classify content without path evidence.
+	probeDiscover probeScope = iota
+	// probeVerify limits a probe to a matching path classification.
+	probeVerify
+	// probeRefine limits a probe to an explicitly selected path refinement.
+	probeRefine
+)
+
 const (
 	structuredProbeFORM structuredProbeKind = iota
 	structuredProbeRIFF
@@ -34,11 +46,13 @@ var pathPatternRefinements = []pathPatternRefinement{
 	{
 		pathType:       "text.cfg",
 		targetType:     "bi.model.cfg",
+		scope:          probeRefine,
 		requiredPrefix: semanticPrefixSize,
 	},
 	{
 		pathType:       "text.xml",
 		targetType:     "bi.ce.ceproject-config",
+		scope:          probeRefine,
 		requiredPrefix: semanticPrefixSize,
 	},
 }
@@ -47,27 +61,31 @@ var pathPatternRefinements = []pathPatternRefinement{
 var normalProbeCapabilities = []normalProbeCapability{
 	{
 		pathType:       "bi.p3d",
+		scope:          probeRefine,
 		contentTypes:   []TypeID{"bi.p3d.odol", "bi.p3d.mlod"},
 		requiredPrefix: 4,
 	},
 	{
 		pathType:       "bi.wrp",
+		scope:          probeRefine,
 		contentTypes:   []TypeID{"bi.wrp.oprw", "bi.wrp.8wvr", "bi.wrp.9vbw", "bi.wrp.0wzd"},
 		requiredPrefix: 4,
 	},
 	{
 		pathType:       "bi.rvmat",
+		scope:          probeRefine,
 		contentTypes:   []TypeID{"bi.rap"},
 		requiredPrefix: 4,
 	},
 	{
 		pathType:       "bi.surface.bisurf",
+		scope:          probeRefine,
 		contentTypes:   []TypeID{"bi.rap"},
 		requiredPrefix: 4,
 	},
 }
 
-// structuredProbeCapabilities declares non-static global content detectors.
+// structuredProbeCapabilities declares non-static content detectors and their scopes.
 var structuredProbeCapabilities = []structuredProbeCapability{
 	{
 		kind:           structuredProbeFORM,
@@ -96,6 +114,7 @@ var structuredProbeCapabilities = []structuredProbeCapability{
 	},
 	{
 		kind:           structuredProbeMP3,
+		scope:          probeVerify,
 		requiredPrefix: 4,
 		source:         ContentSourceStructure,
 		typeIDs:        []TypeID{"audio.mp3"},
@@ -140,6 +159,8 @@ type normalProbeCapability struct {
 	pathType TypeID
 	// contentTypes lists static content types eligible for this refinement.
 	contentTypes []TypeID
+	// scope identifies this as an explicit path refinement.
+	scope probeScope
 	// requiredPrefix is the bounded prefix needed by the probe.
 	requiredPrefix int
 }
@@ -150,6 +171,8 @@ type pathPatternRefinement struct {
 	pathType TypeID
 	// targetType is selected when its registered pattern matches.
 	targetType TypeID
+	// scope identifies this as an explicit path refinement.
+	scope probeScope
 	// requiredPrefix is the bounded sample needed by this pattern.
 	requiredPrefix int
 }
@@ -162,6 +185,8 @@ type structuredProbeCapability struct {
 	requiredPrefix int
 	// kind selects the detector implementation.
 	kind structuredProbeKind
+	// scope controls global discovery versus path verification.
+	scope probeScope
 	// source identifies the evidence kind produced by this detector.
 	source ContentSource
 }
@@ -350,6 +375,10 @@ func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 	}
 
 	for _, capability := range structuredProbeCapabilities {
+		if capability.scope != probeDiscover {
+			continue
+		}
+
 		typeID, ok := runStructuredProbe(capability.kind, prefix)
 		if !ok || !slices.Contains(capability.typeIDs, typeID) {
 			continue
@@ -362,6 +391,10 @@ func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 	}
 
 	for _, signature := range magicIndex {
+		if signature.scope != probeDiscover {
+			continue
+		}
+
 		if len(prefix) < len(signature.signature) {
 			continue
 		}
@@ -380,10 +413,48 @@ func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 	return registryRecord{}, ContentSourceNone, false
 }
 
+// detectVerifyRecord runs verification probes enabled for one path type.
+func detectVerifyRecord(prefix []byte, pathType TypeID) (registryRecord, ContentSource, bool) {
+	if len(prefix) == 0 {
+		return registryRecord{}, ContentSourceNone, false
+	}
+
+	for _, capability := range structuredProbeCapabilities {
+		if capability.scope != probeVerify || !slices.Contains(capability.typeIDs, pathType) {
+			continue
+		}
+
+		typeID, ok := runStructuredProbe(capability.kind, prefix)
+		if !ok || !slices.Contains(capability.typeIDs, typeID) {
+			continue
+		}
+
+		record, ok := typeByID[string(typeID)]
+		if ok {
+			return record, capability.source, true
+		}
+	}
+
+	for _, signature := range magicIndex {
+		if signature.scope != probeVerify || signature.typeID != string(pathType) ||
+			len(prefix) < len(signature.signature) ||
+			!slices.Equal(prefix[:len(signature.signature)], signature.signature) {
+			continue
+		}
+
+		record, ok := typeByID[signature.typeID]
+		if ok {
+			return record, ContentSourceMagic, true
+		}
+	}
+
+	return registryRecord{}, ContentSourceNone, false
+}
+
 // detectNormalProbeRecord runs only the static targets enabled for one path type.
 func detectNormalProbeRecord(prefix []byte, pathType TypeID) (registryRecord, bool) {
 	capability, ok := builtinRegistry.normalProbes[pathType]
-	if !ok || len(prefix) == 0 {
+	if !ok || capability.scope != probeRefine || len(prefix) == 0 {
 		return registryRecord{}, false
 	}
 
@@ -702,7 +773,11 @@ func buildMagicIndex(records []registryRecord) []magicMatch {
 
 			copied := make([]byte, len(signature))
 			copy(copied, signature)
-			flat = append(flat, magicMatch{signature: copied, typeID: strings.ToLower(string(record.typ.ID))})
+			flat = append(flat, magicMatch{
+				signature: copied,
+				typeID:    strings.ToLower(string(record.typ.ID)),
+				scope:     record.magicScope,
+			})
 		}
 	}
 

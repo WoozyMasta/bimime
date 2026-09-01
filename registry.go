@@ -14,6 +14,8 @@ type registryRecord struct {
 	magic [][]byte
 	// typ is the public descriptor with explicit classification metadata.
 	typ Type
+	// magicScope controls whether static signatures discover or verify this type.
+	magicScope probeScope
 	// specificity ranks variants within a compatible family.
 	specificity uint8
 }
@@ -24,6 +26,8 @@ type magicMatch struct {
 	typeID string
 	// signature contains the bytes compared at offset zero.
 	signature []byte
+	// scope controls whether the signature discovers or verifies its type.
+	scope probeScope
 }
 
 // registryDefinitions declares known BI game file types before index compilation.
@@ -134,6 +138,7 @@ var registryDefinitions = []registryRecord{
 			Extensions:  []string{"paa", "pac"},
 			Traits:      TraitBinary | TraitImage,
 		},
+		magicScope: probeVerify,
 		magic: [][]byte{
 			{1, 255}, {2, 255}, {3, 255}, {4, 255}, {5, 255},
 			{68, 68}, {85, 21}, {136, 136}, {128, 128},
@@ -167,7 +172,8 @@ var registryDefinitions = []registryRecord{
 			Extensions:  []string{"bmp"},
 			Traits:      TraitBinary | TraitImage,
 		},
-		magic: [][]byte{[]byte("BM")},
+		magicScope: probeVerify,
+		magic:      [][]byte{[]byte("BM")},
 	},
 	{
 		typ: Type{

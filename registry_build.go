@@ -22,6 +22,8 @@ type compiledRegistry struct {
 	magic []magicMatch
 	// normalProbes contains path-scoped refinements enabled by ProfileNormal.
 	normalProbes map[TypeID]normalProbeCapability
+	// verifierRequiredPrefix stores the largest relevant content probe bound per path type.
+	verifierRequiredPrefix map[TypeID]int
 	// fileNames maps normalized exact basenames to type ids.
 	fileNames map[string]string
 	// filePrefixes stores filename prefix rules from longest to shortest.
@@ -223,8 +225,58 @@ func buildRegistry(
 	if err := validateRefinements(registry, contextual, normalProbes, patterns); err != nil {
 		return compiledRegistry{}, err
 	}
+	registry.verifierRequiredPrefix = compileVerifierRequiredPrefixes(registry, contextual, patterns)
 
 	return registry, nil
+}
+
+// compileVerifierRequiredPrefixes compiles the maximum relevant probe bound for each path type.
+func compileVerifierRequiredPrefixes(
+	registry compiledRegistry,
+	contextual map[contextualRefinementKey]TypeID,
+	patterns []pathPatternRefinement,
+) map[TypeID]int {
+	familyPrefixes := make(map[FamilyID]int)
+	for _, record := range registry.records {
+		for _, signature := range record.magic {
+			familyPrefixes[record.typ.Family] = max(familyPrefixes[record.typ.Family], len(signature))
+		}
+	}
+
+	compiled := make(map[TypeID]int, len(registry.records))
+	for _, record := range registry.records {
+		if required := familyPrefixes[record.typ.Family]; required > 0 {
+			compiled[record.typ.ID] = required
+		}
+	}
+
+	for key := range contextual {
+		pathRecord, pathOK := registry.byID[string(key.pathType)]
+		contentRecord, contentOK := registry.byID[string(key.contentType)]
+		if !pathOK || !contentOK {
+			continue
+		}
+
+		for _, signature := range contentRecord.magic {
+			compiled[pathRecord.typ.ID] = max(compiled[pathRecord.typ.ID], len(signature))
+		}
+	}
+
+	for _, capability := range structuredProbeCapabilities {
+		for _, typeID := range capability.typeIDs {
+			if _, ok := registry.byID[string(typeID)]; ok {
+				compiled[typeID] = max(compiled[typeID], capability.requiredPrefix)
+			}
+		}
+	}
+
+	for _, pattern := range patterns {
+		if _, ok := registry.byID[string(pattern.pathType)]; ok {
+			compiled[pattern.pathType] = max(compiled[pattern.pathType], pattern.requiredPrefix)
+		}
+	}
+
+	return compiled
 }
 
 // validateStructuredProbeCapabilities verifies detector targets against the compiled registry.

@@ -216,6 +216,32 @@ func TestStructuredProbeCapabilities(t *testing.T) {
 	}
 }
 
+func TestCompiledVerifierRequiredPrefixes(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		typeID TypeID
+		want   int
+	}{
+		{typeID: "image.png", want: 8},
+		{typeID: "image.dds", want: thoroughPrefixSize},
+		{typeID: "text.cfg", want: semanticPrefixSize},
+		{typeID: "bi.rvmat", want: 4},
+		{typeID: "text.sqf", want: 0},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(string(testCase.typeID), func(t *testing.T) {
+			t.Parallel()
+
+			if got := builtinRegistry.verifierRequiredPrefix[testCase.typeID]; got != testCase.want {
+				t.Fatalf("verifier prefix for %q = %d, want %d", testCase.typeID, got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestStructuredProbeEvidenceSource(t *testing.T) {
 	t.Parallel()
 

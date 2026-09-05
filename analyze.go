@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 )
 
 const (
@@ -123,9 +122,11 @@ func Analyze(name string, prefix []byte, profile Profile) Result {
 	}
 	resolveEvidence(&result, pathRecord, hasPath, contentRecord, hasContent)
 
-	if profile == ProfileThorough && hasPath && !hasContent && len(prefix) >= required &&
-		hasContentVerifier(pathRecord) {
-		result.Flags |= FlagExpectedContentMissing
+	if profile == ProfileThorough && hasPath && !hasContent {
+		verifierRequired := builtinRegistry.verifierRequiredPrefix[pathRecord.typ.ID]
+		if verifierRequired > 0 && len(prefix) >= verifierRequired {
+			result.Flags |= FlagExpectedContentMissing
+		}
 	}
 
 	return result
@@ -268,29 +269,4 @@ func resolveEvidence(
 		result.Type = contentRecord.typ.ID
 		result.Relation = RelationConflict
 	}
-}
-
-// hasContentVerifier reports whether a path type has a registered content probe.
-func hasContentVerifier(pathRecord registryRecord) bool {
-	if len(pathRecord.magic) > 0 {
-		return true
-	}
-
-	for key := range contextualRefinements {
-		if key.pathType == pathRecord.typ.ID {
-			return true
-		}
-	}
-	for _, record := range registryRecords {
-		if record.typ.Family == pathRecord.typ.Family && len(record.magic) > 0 {
-			return true
-		}
-	}
-	for _, capability := range structuredProbeCapabilities {
-		if slices.Contains(capability.typeIDs, pathRecord.typ.ID) {
-			return true
-		}
-	}
-
-	return false
 }

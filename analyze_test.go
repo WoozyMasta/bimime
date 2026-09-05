@@ -365,6 +365,27 @@ func TestAnalyzeReaderExpectedContentMissing(t *testing.T) {
 	}
 }
 
+func TestAnalyzeExpectedContentMissingUsesVerifierPrefix(t *testing.T) {
+	t.Parallel()
+
+	prefix := []byte("12345678")
+	result := Analyze("x.png", prefix, ProfileThorough)
+	if result.RequiredPrefix != thoroughPrefixSize || !result.Has(FlagIncomplete) ||
+		!result.Has(FlagExpectedContentMissing) {
+		t.Fatalf("8-byte PNG result = %+v, want incomplete and missing expected content", result)
+	}
+
+	short := Analyze("x.png", prefix[:len(prefix)-1], ProfileThorough)
+	if !short.Has(FlagIncomplete) || short.Has(FlagExpectedContentMissing) {
+		t.Fatalf("7-byte PNG result = %+v, want incomplete without a missing-content flag", short)
+	}
+
+	withoutVerifier := Analyze("script.sqf", bytes.Repeat([]byte{'x'}, thoroughPrefixSize), ProfileThorough)
+	if withoutVerifier.Has(FlagExpectedContentMissing) {
+		t.Fatalf("SQF result = %+v, want no missing-content flag without a verifier", withoutVerifier)
+	}
+}
+
 func TestAnalyzeReaderAndFileMatchAnalyze(t *testing.T) {
 	t.Parallel()
 

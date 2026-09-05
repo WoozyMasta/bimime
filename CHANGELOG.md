@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning][].
   Normal refinements run only declared targets.
 * Weak PAA/BMP signatures and raw MP3 frame headers verify matching paths
   without enabling global content discovery.
+* Thorough analysis reports missing expected content
+  as soon as its path verifier has enough bytes,
+  independent of the global prefix budget.
 
 ## [0.2.1][] - 2026-04-03
 

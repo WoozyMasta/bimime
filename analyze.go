@@ -19,43 +19,76 @@ const (
 	maxConsecutiveEmptyReads = 100
 )
 
+// analysisPlan caches path evidence and all prefix budgets for one operation.
+type analysisPlan struct {
+	// path is the registry entry resolved from the logical name.
+	path registryRecord
+	// pattern is the cached target record for a path-scoped semantic verifier.
+	pattern registryRecord
+	// requiredPrefix is the maximum prefix read or accepted for the profile.
+	requiredPrefix int
+	// verifierPrefix is the path-specific bound needed to reject expected content.
+	verifierPrefix int
+	// hasPath reports whether the logical name matched a registered type.
+	hasPath bool
+	// profile selects the probes used by analysis.
+	profile Profile
+	// hasPattern reports whether the path has a semantic verifier.
+	hasPattern bool
+}
+
 // RequiredPrefix returns the total prefix length needed for the selected name and profile.
 // Fast always returns zero.
 func RequiredPrefix(name string, profile Profile) int {
-	validateProfile(profile)
-
-	switch profile {
-	case ProfileFast:
-		return 0
-
-	case ProfileNormal:
-		if record, ok := detectByPathRecord(name); ok {
-			if capability, ok := builtinRegistry.normalProbes[record.typ.ID]; ok {
-				return capability.requiredPrefix
-			}
-		}
-		return 0
-
-	case ProfileThorough:
-		required := builtinRegistry.thoroughPrefix
-		if record, ok := detectByPathRecord(name); ok {
-			for _, refinement := range pathPatternRefinements {
-				if record.typ.ID == refinement.pathType {
-					required = max(required, refinement.requiredPrefix)
-					break
-				}
-			}
-		}
-		return required
-
-	default:
-		panic("unreachable profile")
-	}
+	return makePlan(name, profile).requiredPrefix
 }
 
 // Analyze classifies a logical name and caller-owned prefix without performing I/O.
 func Analyze(name string, prefix []byte, profile Profile) Result {
-	required := RequiredPrefix(name, profile)
+	return analyzePlanned(makePlan(name, profile), prefix)
+}
+
+// makePlan resolves path evidence and the budgets needed for one classification.
+func makePlan(name string, profile Profile) analysisPlan {
+	validateProfile(profile)
+	path, hasPath := detectByPathRecord(name)
+	plan := analysisPlan{path: path, hasPath: hasPath, profile: profile}
+
+	switch profile {
+	case ProfileFast:
+		return plan
+
+	case ProfileNormal:
+		if hasPath {
+			if capability, ok := builtinRegistry.normalProbes[path.typ.ID]; ok {
+				plan.requiredPrefix = capability.requiredPrefix
+			}
+		}
+
+	case ProfileThorough:
+		plan.requiredPrefix = builtinRegistry.thoroughPrefix
+		if !hasPath {
+			return plan
+		}
+
+		plan.verifierPrefix = builtinRegistry.verifierRequiredPrefix[path.typ.ID]
+		for _, refinement := range pathPatternRefinements {
+			if refinement.scope != probeRefine || path.typ.ID != refinement.pathType {
+				continue
+			}
+
+			plan.requiredPrefix = max(plan.requiredPrefix, refinement.requiredPrefix)
+			plan.pattern, plan.hasPattern = typeByID[string(refinement.targetType)]
+			break
+		}
+	}
+
+	return plan
+}
+
+// analyzePlanned classifies a prefix using path evidence and budgets resolved by makePlan.
+func analyzePlanned(plan analysisPlan, prefix []byte) Result {
+	required := plan.requiredPrefix
 	if len(prefix) > required {
 		prefix = prefix[:required]
 	}
@@ -65,21 +98,21 @@ func Analyze(name string, prefix []byte, profile Profile) Result {
 		result.Flags |= FlagIncomplete
 	}
 
-	pathRecord, hasPath := detectByPathRecord(name)
+	pathRecord, hasPath := plan.path, plan.hasPath
 	if hasPath {
 		result.ByPath = pathRecord.typ.ID
 		result.Type = pathRecord.typ.ID
 		result.Relation = RelationPathOnly
 	}
 
-	if profile == ProfileFast || len(prefix) == 0 {
+	if plan.profile == ProfileFast || len(prefix) == 0 {
 		if !hasPath {
 			result.Relation = RelationUnknown
 		}
 		return result
 	}
 
-	if profile == ProfileNormal {
+	if plan.profile == ProfileNormal {
 		if !hasPath || required == 0 {
 			return result
 		}
@@ -106,8 +139,8 @@ func Analyze(name string, prefix []byte, profile Profile) Result {
 		contentRecord, contentSource, hasContent = detectVerifyRecord(prefix, pathRecord.typ.ID)
 	}
 	if hasPath && !hasContent {
-		if refined, ok := matchPathPattern(pathRecord, prefix); ok {
-			contentRecord = refined
+		if plan.hasPattern && matchRecordPatterns(plan.pattern, prefix) {
+			contentRecord = plan.pattern
 			hasContent = true
 			contentSource = ContentSourcePattern
 		}
@@ -122,9 +155,8 @@ func Analyze(name string, prefix []byte, profile Profile) Result {
 	}
 	resolveEvidence(&result, pathRecord, hasPath, contentRecord, hasContent)
 
-	if profile == ProfileThorough && hasPath && !hasContent {
-		verifierRequired := builtinRegistry.verifierRequiredPrefix[pathRecord.typ.ID]
-		if verifierRequired > 0 && len(prefix) >= verifierRequired {
+	if plan.profile == ProfileThorough && hasPath && !hasContent {
+		if plan.verifierPrefix > 0 && len(prefix) >= plan.verifierPrefix {
 			result.Flags |= FlagExpectedContentMissing
 		}
 	}
@@ -139,9 +171,10 @@ func Probe(name string, prefix []byte) Result {
 
 // AnalyzeReader reads only the prefix planned for the selected profile.
 func AnalyzeReader(name string, reader io.Reader, profile Profile) (Result, error) {
-	required := RequiredPrefix(name, profile)
+	plan := makePlan(name, profile)
+	required := plan.requiredPrefix
 	if required == 0 {
-		return Analyze(name, nil, profile), nil
+		return analyzePlanned(plan, nil), nil
 	}
 	if reader == nil {
 		return Result{}, ErrNilReader
@@ -152,14 +185,15 @@ func AnalyzeReader(name string, reader io.Reader, profile Profile) (Result, erro
 		return Result{}, fmt.Errorf("read content prefix: %w", err)
 	}
 
-	return Analyze(name, prefix, profile), nil
+	return analyzePlanned(plan, prefix), nil
 }
 
 // AnalyzeFile opens the exact supplied path and reads only its planned prefix.
 func AnalyzeFile(path string, profile Profile) (Result, error) {
-	required := RequiredPrefix(path, profile)
+	plan := makePlan(path, profile)
+	required := plan.requiredPrefix
 	if required == 0 {
-		return Analyze(path, nil, profile), nil
+		return analyzePlanned(plan, nil), nil
 	}
 
 	file, err := os.Open(path)
@@ -168,7 +202,12 @@ func AnalyzeFile(path string, profile Profile) (Result, error) {
 	}
 	defer func() { _ = file.Close() }()
 
-	return AnalyzeReader(path, file, profile)
+	prefix, err := readPrefix(file, required)
+	if err != nil {
+		return Result{}, fmt.Errorf("read content prefix: %w", err)
+	}
+
+	return analyzePlanned(plan, prefix), nil
 }
 
 // validateProfile rejects enum values that are outside the public profile set.
@@ -210,21 +249,15 @@ func readPrefix(reader io.Reader, limit int) ([]byte, error) {
 	return buf, nil
 }
 
-// matchPathPattern returns a registered semantic refinement for a path type.
-func matchPathPattern(pathRecord registryRecord, prefix []byte) (registryRecord, bool) {
-	for _, refinement := range pathPatternRefinements {
-		if refinement.scope != probeRefine || pathRecord.typ.ID != refinement.pathType ||
-			!matchContentPatternForType(string(refinement.targetType), prefix) {
-			continue
-		}
-
-		record, ok := typeByID[string(refinement.targetType)]
-		if ok {
-			return record, true
+// matchRecordPatterns reports whether a record's semantic verifier matches the prefix.
+func matchRecordPatterns(record registryRecord, prefix []byte) bool {
+	for _, pattern := range record.contentPatterns {
+		if pattern.Match(prefix) {
+			return true
 		}
 	}
 
-	return registryRecord{}, false
+	return false
 }
 
 // resolveEvidence selects the final type and relation from path/content evidence.

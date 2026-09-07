@@ -284,21 +284,6 @@ func normalizeShortDescription(shortDescription string, description string) stri
 	return string(runes[:maxShortDescriptionLen-3]) + "..."
 }
 
-// matchContentPatternForType reports whether any registered pattern matches a prefix.
-func matchContentPatternForType(typeID string, prefix []byte) bool {
-	record, ok := typeByID[lowerKey(strings.TrimSpace(typeID))]
-	if !ok || len(record.contentPatterns) == 0 {
-		return false
-	}
-	for _, pattern := range record.contentPatterns {
-		if pattern.Match(prefix) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // detectByPathRecord resolves by known filename first, then by extension.
 func detectByPathRecord(path string) (registryRecord, bool) {
 	return detectByPathRecordWithExtension(path, extensionKey(path))

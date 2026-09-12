@@ -1579,8 +1579,8 @@ var registryDefinitions = []registryRecord{
 	},
 }
 
-// typeIDByFileName maps well-known file names to stable type ids.
-var typeIDByFileName = map[string]string{
+// builtinFileNames declares well-known file names and their type ids.
+var builtinFileNames = map[string]string{
 	"texheaders.bin":              "bi.texheaders",
 	"config.cpp":                  "bi.config.main.cpp",
 	"config.bin":                  "bi.config.main.bin",
@@ -1622,34 +1622,22 @@ var typeIDByFileName = map[string]string{
 	"mapgroupproto.xml":           "bi.ce.mapgroupproto",
 }
 
-// typeIDByFilePrefix maps filename prefixes to type ids.
+// builtinFilePrefixes declares rolling filename prefixes and their type ids.
 // Used for rolling exports like mapgroupcluster1.xml, mapgroupcluster2.xml.
-var typeIDByFilePrefix = map[string]string{
+var builtinFilePrefixes = map[string]string{
 	"mapgroupcluster": "bi.ce.mapgroupcluster",
 }
 
-// typeIDByFileSuffix maps filename suffixes to type ids.
+// builtinFileSuffixes declares dynamic filename suffixes and their type ids.
 // Used for dynamic names like hare_territories.xml.
-var typeIDByFileSuffix = map[string]string{
+var builtinFileSuffixes = map[string]string{
 	"_territories.xml": "bi.ce.env.territories",
 }
 
 // builtinRegistry contains the validated immutable indexes used by the package.
 var builtinRegistry = mustBuildRegistry(
 	registryDefinitions,
-	typeIDByFileName,
-	typeIDByFilePrefix,
-	typeIDByFileSuffix,
+	builtinFileNames,
+	builtinFilePrefixes,
+	builtinFileSuffixes,
 )
-
-// registryRecords contains normalized built-in declarations.
-var registryRecords = builtinRegistry.records
-
-// typeByID indexes registry records by stable id.
-var typeByID = builtinRegistry.byID
-
-// typeByExtension indexes registry records by normalized extension.
-var typeByExtension = builtinRegistry.byExtension
-
-// magicIndex stores static signatures in deterministic matching order.
-var magicIndex = builtinRegistry.magic

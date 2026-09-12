@@ -22,6 +22,12 @@ type compiledRegistry struct {
 	magic []magicMatch
 	// normalProbes contains path-scoped refinements enabled by ProfileNormal.
 	normalProbes map[TypeID]normalProbeCapability
+	// contextualRefinements maps path and content evidence to a refined type.
+	contextualRefinements map[contextualRefinementKey]TypeID
+	// pathPatternRefinements contains compiled path-scoped semantic probes.
+	pathPatternRefinements []pathPatternRefinement
+	// structuredProbeCapabilities contains compiled non-static detectors.
+	structuredProbeCapabilities []structuredProbeCapability
 	// verifierRequiredPrefix stores the largest relevant content probe bound per path type.
 	verifierRequiredPrefix map[TypeID]int
 	// fileNames maps normalized exact basenames to type ids.
@@ -54,17 +60,14 @@ func mustBuildRegistry(
 		fileNames,
 		filePrefixes,
 		fileSuffixes,
-		contextualRefinements,
-		normalProbeCapabilities,
-		pathPatternRefinements,
+		builtinContextualRefinements,
+		builtinNormalProbeCapabilities,
+		builtinPathPatternRefinements,
+		builtinStructuredProbeCapabilities,
 	)
 	if err != nil {
 		panic(fmt.Errorf("bimime: invalid built-in registry: %w", err))
 	}
-	if err := validateStructuredProbeCapabilities(registry); err != nil {
-		panic(fmt.Errorf("bimime: invalid built-in registry: %w", err))
-	}
-
 	return registry
 }
 
@@ -82,6 +85,7 @@ func buildRegistry(
 	contextual map[contextualRefinementKey]TypeID,
 	normalProbes []normalProbeCapability,
 	patterns []pathPatternRefinement,
+	structuredProbes []structuredProbeCapability,
 ) (compiledRegistry, error) {
 	for index, record := range definitions {
 		if utf8Len(record.typ.ShortDescription) > maxShortDescriptionLen {
@@ -94,11 +98,25 @@ func buildRegistry(
 	}
 
 	registry := compiledRegistry{
-		records:      normalizeRegistryRecords(definitions),
-		byID:         make(map[string]registryRecord, len(definitions)),
-		byExtension:  make(map[string]registryRecord, len(definitions)),
-		normalProbes: make(map[TypeID]normalProbeCapability, len(normalProbes)),
-		fileNames:    make(map[string]string, len(fileNames)),
+		records:                normalizeRegistryRecords(definitions),
+		byID:                   make(map[string]registryRecord, len(definitions)),
+		byExtension:            make(map[string]registryRecord, len(definitions)),
+		normalProbes:           make(map[TypeID]normalProbeCapability, len(normalProbes)),
+		fileNames:              make(map[string]string, len(fileNames)),
+		contextualRefinements:  make(map[contextualRefinementKey]TypeID, len(contextual)),
+		pathPatternRefinements: append([]pathPatternRefinement(nil), patterns...),
+		structuredProbeCapabilities: make(
+			[]structuredProbeCapability,
+			len(structuredProbes),
+		),
+	}
+
+	for key, targetID := range contextual {
+		registry.contextualRefinements[key] = targetID
+	}
+	for index, capability := range structuredProbes {
+		capability.typeIDs = append([]TypeID(nil), capability.typeIDs...)
+		registry.structuredProbeCapabilities[index] = capability
 	}
 
 	for index := range registry.records {
@@ -207,7 +225,7 @@ func buildRegistry(
 	for _, match := range registry.magic {
 		registry.thoroughPrefix = max(registry.thoroughPrefix, len(match.signature))
 	}
-	for _, capability := range structuredProbeCapabilities {
+	for _, capability := range registry.structuredProbeCapabilities {
 		if capability.requiredPrefix < 1 || capability.requiredPrefix > thoroughPrefixSize {
 			return compiledRegistry{}, registryErrorf(
 				"structured probe %d has invalid prefix requirement %d",
@@ -222,10 +240,19 @@ func buildRegistry(
 	if err := validateMagicIndex(registry.magic); err != nil {
 		return compiledRegistry{}, err
 	}
-	if err := validateRefinements(registry, contextual, normalProbes, patterns); err != nil {
+	if err := validateStructuredProbeCapabilities(registry); err != nil {
 		return compiledRegistry{}, err
 	}
-	registry.verifierRequiredPrefix = compileVerifierRequiredPrefixes(registry, contextual, patterns)
+
+	if err := validateRefinements(
+		registry,
+		registry.contextualRefinements,
+		registry.normalProbes,
+		registry.pathPatternRefinements,
+	); err != nil {
+		return compiledRegistry{}, err
+	}
+	registry.verifierRequiredPrefix = compileVerifierRequiredPrefixes(registry)
 
 	return registry, nil
 }
@@ -233,8 +260,6 @@ func buildRegistry(
 // compileVerifierRequiredPrefixes compiles the maximum relevant probe bound for each path type.
 func compileVerifierRequiredPrefixes(
 	registry compiledRegistry,
-	contextual map[contextualRefinementKey]TypeID,
-	patterns []pathPatternRefinement,
 ) map[TypeID]int {
 	familyPrefixes := make(map[FamilyID]int)
 	for _, record := range registry.records {
@@ -250,7 +275,7 @@ func compileVerifierRequiredPrefixes(
 		}
 	}
 
-	for key := range contextual {
+	for key := range registry.contextualRefinements {
 		pathRecord, pathOK := registry.byID[string(key.pathType)]
 		contentRecord, contentOK := registry.byID[string(key.contentType)]
 		if !pathOK || !contentOK {
@@ -262,7 +287,7 @@ func compileVerifierRequiredPrefixes(
 		}
 	}
 
-	for _, capability := range structuredProbeCapabilities {
+	for _, capability := range registry.structuredProbeCapabilities {
 		for _, typeID := range capability.typeIDs {
 			if _, ok := registry.byID[string(typeID)]; ok {
 				compiled[typeID] = max(compiled[typeID], capability.requiredPrefix)
@@ -270,7 +295,7 @@ func compileVerifierRequiredPrefixes(
 		}
 	}
 
-	for _, pattern := range patterns {
+	for _, pattern := range registry.pathPatternRefinements {
 		if _, ok := registry.byID[string(pattern.pathType)]; ok {
 			compiled[pattern.pathType] = max(compiled[pattern.pathType], pattern.requiredPrefix)
 		}
@@ -281,8 +306,8 @@ func compileVerifierRequiredPrefixes(
 
 // validateStructuredProbeCapabilities verifies detector targets against the compiled registry.
 func validateStructuredProbeCapabilities(registry compiledRegistry) error {
-	seen := make(map[structuredProbeKind]struct{}, len(structuredProbeCapabilities))
-	for _, capability := range structuredProbeCapabilities {
+	seen := make(map[structuredProbeKind]struct{}, len(registry.structuredProbeCapabilities))
+	for _, capability := range registry.structuredProbeCapabilities {
 		if _, exists := seen[capability.kind]; exists {
 			return registryErrorf("duplicate structured probe kind %d", capability.kind)
 		}
@@ -402,18 +427,32 @@ func validateMagicIndex(index []magicMatch) error {
 func validateRefinements(
 	registry compiledRegistry,
 	contextual map[contextualRefinementKey]TypeID,
-	normalProbes []normalProbeCapability,
+	normalProbes map[TypeID]normalProbeCapability,
 	patterns []pathPatternRefinement,
 ) error {
 	for key, targetID := range contextual {
-		if _, ok := registry.byID[string(key.pathType)]; !ok {
+		pathRecord, ok := registry.byID[string(key.pathType)]
+		if !ok {
 			return registryErrorf("contextual refinement references unknown path type %q", key.pathType)
 		}
 		if _, ok := registry.byID[string(key.contentType)]; !ok {
 			return registryErrorf("contextual refinement references unknown content type %q", key.contentType)
 		}
-		if _, ok := registry.byID[string(targetID)]; !ok {
+
+		targetRecord, ok := registry.byID[string(targetID)]
+		if !ok {
 			return registryErrorf("contextual refinement references unknown target type %q", targetID)
+		}
+
+		if targetRecord.typ.ID != pathRecord.typ.ID &&
+			(targetRecord.typ.Family != pathRecord.typ.Family ||
+				targetRecord.specificity <= pathRecord.specificity) {
+			return registryErrorf(
+				"contextual target %q is not the path type %q or a more specific member of family %q",
+				targetID,
+				key.pathType,
+				pathRecord.typ.Family,
+			)
 		}
 	}
 

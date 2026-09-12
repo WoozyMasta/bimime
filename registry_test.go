@@ -186,7 +186,7 @@ func TestRegistryCopiesAndMetadata(t *testing.T) {
 	if got, _ := Lookup("bi.rap"); got.Extensions[0] != "rap" {
 		t.Fatal("Registry must return independent extension slices")
 	}
-	for _, record := range registryRecords {
+	for _, record := range builtinRegistry.records {
 		traits := record.typ.Traits & (TraitText | TraitBinary)
 		if traits != TraitText && traits != TraitBinary {
 			t.Errorf("type %q must have exactly one text/binary trait, got %b", record.typ.ID, traits)
@@ -204,7 +204,7 @@ func TestStructuredProbeCapabilities(t *testing.T) {
 		t.Fatalf("validate structured probes: %v", err)
 	}
 
-	for _, capability := range structuredProbeCapabilities {
+	for _, capability := range builtinRegistry.structuredProbeCapabilities {
 		if capability.requiredPrefix < 1 || capability.requiredPrefix > thoroughPrefixSize {
 			t.Errorf("probe %d prefix requirement = %d, outside bounds", capability.kind, capability.requiredPrefix)
 		}
@@ -345,7 +345,7 @@ func TestBuildRegistryRejectsInvalidDefinitions(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := buildRegistry(testCase.definitions, testCase.fileNames, nil, nil, nil, nil, nil)
+			_, err := buildRegistry(testCase.definitions, testCase.fileNames, nil, nil, nil, nil, nil, nil)
 			if err == nil || !errors.Is(err, errInvalidRegistry) {
 				t.Fatalf("buildRegistry error = %v, want invalid registry error", err)
 			}
@@ -449,10 +449,50 @@ func TestBuildRegistryRejectsInvalidNormalProbes(t *testing.T) {
 					requiredPrefix: testCase.required,
 				}},
 				nil,
+				nil,
 			)
 			if err == nil || !errors.Is(err, errInvalidRegistry) {
 				t.Fatalf("buildRegistry error = %v, want invalid registry error", err)
 			}
 		})
+	}
+}
+
+func TestBuildRegistryRejectsIncompatibleContextualRefinement(t *testing.T) {
+	t.Parallel()
+
+	definitions := []registryRecord{
+		{typ: Type{
+			ID:          "test.path",
+			Family:      "test.path-family",
+			MIME:        "application/octet-stream",
+			Description: "Path type",
+			Extensions:  []string{"path"},
+			Traits:      TraitBinary,
+		}},
+		{typ: Type{
+			ID:          "test.content",
+			Family:      "test.content-family",
+			MIME:        "application/octet-stream",
+			Description: "Content type",
+			Extensions:  []string{"content"},
+			Traits:      TraitBinary,
+		}},
+		{typ: Type{
+			ID:          "test.target",
+			Family:      "test.target-family",
+			MIME:        "application/octet-stream",
+			Description: "Incompatible contextual target",
+			Extensions:  []string{"target"},
+			Traits:      TraitBinary,
+		}},
+	}
+	contextual := map[contextualRefinementKey]TypeID{
+		{pathType: "test.path", contentType: "test.content"}: "test.target",
+	}
+
+	_, err := buildRegistry(definitions, nil, nil, nil, contextual, nil, nil, nil)
+	if err == nil || !errors.Is(err, errInvalidRegistry) {
+		t.Fatalf("buildRegistry error = %v, want invalid contextual refinement error", err)
 	}
 }

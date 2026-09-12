@@ -33,16 +33,16 @@ const (
 	structuredProbeDDS
 )
 
-// contextualRefinements maps contextual format evidence to its specialized type.
-var contextualRefinements = map[contextualRefinementKey]TypeID{
+// builtinContextualRefinements declares path-aware format specializations.
+var builtinContextualRefinements = map[contextualRefinementKey]TypeID{
 	{pathType: "bi.config.main.bin", contentType: "bi.rap"}: "bi.config.main.bin",
 	{pathType: "bi.mod.bin", contentType: "bi.rap"}:         "bi.mod.bin",
 	{pathType: "bi.rvmat", contentType: "bi.rap"}:           "bi.rvmat.bin",
 	{pathType: "bi.surface.bisurf", contentType: "bi.rap"}:  "bi.surface.bisurf.bin",
 }
 
-// pathPatternRefinements declares path-scoped semantic content specializations.
-var pathPatternRefinements = []pathPatternRefinement{
+// builtinPathPatternRefinements declares path-scoped semantic specializations.
+var builtinPathPatternRefinements = []pathPatternRefinement{
 	{
 		pathType:       "text.cfg",
 		targetType:     "bi.model.cfg",
@@ -57,8 +57,8 @@ var pathPatternRefinements = []pathPatternRefinement{
 	},
 }
 
-// normalProbeCapabilities declares the limited refinements enabled by ProfileNormal.
-var normalProbeCapabilities = []normalProbeCapability{
+// builtinNormalProbeCapabilities declares refinements enabled by ProfileNormal.
+var builtinNormalProbeCapabilities = []normalProbeCapability{
 	{
 		pathType:       "bi.p3d",
 		scope:          probeRefine,
@@ -85,8 +85,8 @@ var normalProbeCapabilities = []normalProbeCapability{
 	},
 }
 
-// structuredProbeCapabilities declares non-static content detectors and their scopes.
-var structuredProbeCapabilities = []structuredProbeCapability{
+// builtinStructuredProbeCapabilities declares non-static content detectors and scopes.
+var builtinStructuredProbeCapabilities = []structuredProbeCapability{
 	{
 		kind:           structuredProbeFORM,
 		requiredPrefix: 16,
@@ -126,12 +126,6 @@ var structuredProbeCapabilities = []structuredProbeCapability{
 		typeIDs:        []TypeID{"image.dds", "image.edds"},
 	},
 }
-
-// filePrefixRecords stores validated prefix mappings in stable matching order.
-var filePrefixRecords = builtinRegistry.filePrefixes
-
-// fileSuffixRecords stores validated suffix mappings in stable matching order.
-var fileSuffixRecords = builtinRegistry.fileSuffixes
 
 // filePrefixRecord stores one filename-prefix mapping to a type id.
 type filePrefixRecord struct {
@@ -196,8 +190,8 @@ type structuredProbeKind uint8
 
 // Registry returns all registered game types.
 func Registry() []Type {
-	out := make([]Type, 0, len(registryRecords))
-	for _, record := range registryRecords {
+	out := make([]Type, 0, len(builtinRegistry.records))
+	for _, record := range builtinRegistry.records {
 		out = append(out, cloneType(record.typ))
 	}
 
@@ -206,7 +200,7 @@ func Registry() []Type {
 
 // Lookup finds one type by stable id.
 func Lookup(id TypeID) (Type, bool) {
-	record, ok := typeByID[strings.ToLower(strings.TrimSpace(string(id)))]
+	record, ok := builtinRegistry.byID[strings.ToLower(strings.TrimSpace(string(id)))]
 	if !ok {
 		return UnknownType(), false
 	}
@@ -216,7 +210,7 @@ func Lookup(id TypeID) (Type, bool) {
 
 // specializeRAPRecordForExtension applies a registered contextual refinement.
 func specializeRAPRecordForExtension(byMagicRecord registryRecord, byExtensionID string) registryRecord {
-	targetID, ok := contextualRefinements[contextualRefinementKey{
+	targetID, ok := builtinRegistry.contextualRefinements[contextualRefinementKey{
 		pathType:    TypeID(byExtensionID),
 		contentType: byMagicRecord.typ.ID,
 	}]
@@ -224,7 +218,7 @@ func specializeRAPRecordForExtension(byMagicRecord registryRecord, byExtensionID
 		return byMagicRecord
 	}
 
-	record, ok := typeByID[string(targetID)]
+	record, ok := builtinRegistry.byID[string(targetID)]
 	if !ok {
 		return byMagicRecord
 	}
@@ -293,19 +287,19 @@ func detectByPathRecord(path string) (registryRecord, bool) {
 // then by precomputed extension key.
 func detectByPathRecordWithExtension(path string, extension string) (registryRecord, bool) {
 	fileName := fileNameKey(path)
-	if typeID, ok := typeIDByFileName[fileName]; ok {
-		record, ok := typeByID[typeID]
+	if typeID, ok := builtinRegistry.fileNames[fileName]; ok {
+		record, ok := builtinRegistry.byID[typeID]
 		if ok {
 			return record, true
 		}
 	}
 
-	for _, prefixRecord := range filePrefixRecords {
+	for _, prefixRecord := range builtinRegistry.filePrefixes {
 		if !strings.HasPrefix(fileName, prefixRecord.prefix) {
 			continue
 		}
 
-		record, ok := typeByID[prefixRecord.typeID]
+		record, ok := builtinRegistry.byID[prefixRecord.typeID]
 		if !ok {
 			continue
 		}
@@ -313,12 +307,12 @@ func detectByPathRecordWithExtension(path string, extension string) (registryRec
 		return record, true
 	}
 
-	for _, suffixRecord := range fileSuffixRecords {
+	for _, suffixRecord := range builtinRegistry.fileSuffixes {
 		if !strings.HasSuffix(fileName, suffixRecord.suffix) {
 			continue
 		}
 
-		record, ok := typeByID[suffixRecord.typeID]
+		record, ok := builtinRegistry.byID[suffixRecord.typeID]
 		if !ok {
 			continue
 		}
@@ -335,7 +329,7 @@ func detectByExtensionKeyRecord(extension string) (registryRecord, bool) {
 		return registryRecord{}, false
 	}
 
-	record, ok := typeByExtension[extension]
+	record, ok := builtinRegistry.byExtension[extension]
 	if !ok {
 		return registryRecord{}, false
 	}
@@ -359,7 +353,7 @@ func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 		return registryRecord{}, ContentSourceNone, false
 	}
 
-	for _, capability := range structuredProbeCapabilities {
+	for _, capability := range builtinRegistry.structuredProbeCapabilities {
 		if capability.scope != probeDiscover {
 			continue
 		}
@@ -369,13 +363,13 @@ func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 			continue
 		}
 
-		record, ok := typeByID[string(typeID)]
+		record, ok := builtinRegistry.byID[string(typeID)]
 		if ok {
 			return record, capability.source, true
 		}
 	}
 
-	for _, signature := range magicIndex {
+	for _, signature := range builtinRegistry.magic {
 		if signature.scope != probeDiscover {
 			continue
 		}
@@ -387,7 +381,7 @@ func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 			continue
 		}
 
-		record, ok := typeByID[signature.typeID]
+		record, ok := builtinRegistry.byID[signature.typeID]
 		if !ok {
 			return registryRecord{}, ContentSourceNone, false
 		}
@@ -404,7 +398,7 @@ func detectVerifyRecord(prefix []byte, pathType TypeID) (registryRecord, Content
 		return registryRecord{}, ContentSourceNone, false
 	}
 
-	for _, capability := range structuredProbeCapabilities {
+	for _, capability := range builtinRegistry.structuredProbeCapabilities {
 		if capability.scope != probeVerify || !slices.Contains(capability.typeIDs, pathType) {
 			continue
 		}
@@ -414,20 +408,20 @@ func detectVerifyRecord(prefix []byte, pathType TypeID) (registryRecord, Content
 			continue
 		}
 
-		record, ok := typeByID[string(typeID)]
+		record, ok := builtinRegistry.byID[string(typeID)]
 		if ok {
 			return record, capability.source, true
 		}
 	}
 
-	for _, signature := range magicIndex {
+	for _, signature := range builtinRegistry.magic {
 		if signature.scope != probeVerify || signature.typeID != string(pathType) ||
 			len(prefix) < len(signature.signature) ||
 			!slices.Equal(prefix[:len(signature.signature)], signature.signature) {
 			continue
 		}
 
-		record, ok := typeByID[signature.typeID]
+		record, ok := builtinRegistry.byID[signature.typeID]
 		if ok {
 			return record, ContentSourceMagic, true
 		}

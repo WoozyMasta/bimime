@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning][].
 * Thorough analysis reports missing expected content
   as soon as its path verifier has enough bytes,
   independent of the global prefix budget.
+* Optional path-pattern refinements no longer imply required content.
 * Runtime classification uses compiled registry metadata;
   contextual targets must match or refine their path type family.
 

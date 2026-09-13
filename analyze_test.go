@@ -386,6 +386,23 @@ func TestAnalyzeExpectedContentMissingUsesVerifierPrefix(t *testing.T) {
 	}
 }
 
+func TestOptionalPatternRefinementDoesNotRequireContent(t *testing.T) {
+	t.Parallel()
+
+	prefix := bytes.Repeat([]byte{'x'}, semanticPrefixSize)
+	for _, name := range []string{"foo.cfg", "foo.xml", "model.cfg", "ceproject-config.xml"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			result := Analyze(name, prefix, ProfileThorough)
+			if result.Has(FlagIncomplete) || result.Has(FlagExpectedContentMissing) {
+				t.Fatalf("Analyze(%q) = %+v, want complete path evidence without required content", name, result)
+			}
+		})
+	}
+}
+
 func TestAnalyzeReaderAndFileMatchAnalyze(t *testing.T) {
 	t.Parallel()
 

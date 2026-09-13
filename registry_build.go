@@ -295,12 +295,6 @@ func compileVerifierRequiredPrefixes(
 		}
 	}
 
-	for _, pattern := range registry.pathPatternRefinements {
-		if _, ok := registry.byID[string(pattern.pathType)]; ok {
-			compiled[pattern.pathType] = max(compiled[pattern.pathType], pattern.requiredPrefix)
-		}
-	}
-
 	return compiled
 }
 

@@ -225,7 +225,8 @@ func TestCompiledVerifierRequiredPrefixes(t *testing.T) {
 	}{
 		{typeID: "image.png", want: 8},
 		{typeID: "image.dds", want: thoroughPrefixSize},
-		{typeID: "text.cfg", want: semanticPrefixSize},
+		{typeID: "text.cfg", want: 0},
+		{typeID: "text.xml", want: 0},
 		{typeID: "bi.rvmat", want: 4},
 		{typeID: "text.sqf", want: 0},
 	}

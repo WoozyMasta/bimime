@@ -187,7 +187,7 @@ func TestAnalyzeHonorsProfileAndRelations(t *testing.T) {
 	}
 
 	rvmat := Analyze("material.rvmat", []byte{0x00, 'r', 'a', 'P'}, ProfileNormal)
-	if rvmat.Type != "bi.rvmat.bin" || rvmat.Relation != RelationRefined {
+	if rvmat.Type != "bi.rvmat.bin" || rvmat.ByContent != "bi.rap" || rvmat.Relation != RelationRefined {
 		t.Fatalf("RVMat result = %+v, want RAP refinement", rvmat)
 	}
 }

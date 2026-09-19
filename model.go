@@ -82,7 +82,7 @@ const (
 	RelationPathOnly
 	// RelationContentOnly means only content evidence matched.
 	RelationContentOnly
-	// RelationConfirmed means path and content identify the same type.
+	// RelationConfirmed means content identifies or contextually confirms the path type.
 	RelationConfirmed
 	// RelationRefined means one compatible signal identifies a more specific type.
 	RelationRefined

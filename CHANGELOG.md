@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning][].
 * Optional path-pattern refinements no longer imply required content.
 * Runtime classification uses compiled registry metadata;
   contextual targets must match or refine their path type family.
+* `ByContent` preserves the type detected from the prefix;
+  contextual mappings affect only the resolved type and relation.
 
 ## [0.2.1][] - 2026-04-03
 

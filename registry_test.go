@@ -148,21 +148,44 @@ func TestContextualRAPRefinements(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name string
-		want TypeID
+		name         string
+		want         TypeID
+		wantPath     TypeID
+		wantRelation Relation
 	}{
-		{name: "config.bin", want: "bi.config.main.bin"},
-		{name: "mod.bin", want: "bi.mod.bin"},
-		{name: "surface.rvmat", want: "bi.rvmat.bin"},
-		{name: "terrain.bisurf", want: "bi.surface.bisurf.bin"},
+		{
+			name:         "config.bin",
+			want:         "bi.config.main.bin",
+			wantPath:     "bi.config.main.bin",
+			wantRelation: RelationConfirmed,
+		},
+		{
+			name:         "mod.bin",
+			want:         "bi.mod.bin",
+			wantPath:     "bi.mod.bin",
+			wantRelation: RelationConfirmed,
+		},
+		{
+			name:         "surface.rvmat",
+			want:         "bi.rvmat.bin",
+			wantPath:     "bi.rvmat",
+			wantRelation: RelationRefined,
+		},
+		{
+			name:         "terrain.bisurf",
+			want:         "bi.surface.bisurf.bin",
+			wantPath:     "bi.surface.bisurf",
+			wantRelation: RelationRefined,
+		},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			result := Probe(testCase.name, []byte{0, 'r', 'a', 'P'})
-			if result.Type != testCase.want || result.ByContent != testCase.want {
-				t.Fatalf("result = %+v, want contextual type %q", result, testCase.want)
+			if result.Type != testCase.want || result.ByPath != testCase.wantPath ||
+				result.ByContent != "bi.rap" || result.Relation != testCase.wantRelation {
+				t.Fatalf("result = %+v, want type %q and raw RAP content evidence", result, testCase.want)
 			}
 		})
 	}

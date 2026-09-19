@@ -118,6 +118,7 @@ func analyzePlanned(plan analysisPlan, prefix []byte) Result {
 		}
 
 		contentRecord, hasContent := detectNormalProbeRecord(prefix, pathRecord.typ.ID)
+		contentEvidenceRecord := contentRecord
 		contentSource := ContentSourceMagic
 		if hasContent {
 			contentRecord = specializeRAPRecordForExtension(contentRecord, string(pathRecord.typ.ID))
@@ -126,7 +127,7 @@ func analyzePlanned(plan analysisPlan, prefix []byte) Result {
 			}
 		}
 		if hasContent {
-			result.ByContent = contentRecord.typ.ID
+			result.ByContent = contentEvidenceRecord.typ.ID
 			result.ContentSource = contentSource
 		}
 
@@ -145,12 +146,13 @@ func analyzePlanned(plan analysisPlan, prefix []byte) Result {
 			contentSource = ContentSourcePattern
 		}
 	}
+	contentEvidenceRecord := contentRecord
 	if hasPath && hasContent {
 		contentRecord = specializeRAPRecordForExtension(contentRecord, string(pathRecord.typ.ID))
 	}
 
 	if hasContent {
-		result.ByContent = contentRecord.typ.ID
+		result.ByContent = contentEvidenceRecord.typ.ID
 		result.ContentSource = contentSource
 	}
 	resolveEvidence(&result, pathRecord, hasPath, contentRecord, hasContent)

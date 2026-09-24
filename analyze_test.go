@@ -386,6 +386,39 @@ func TestAnalyzeExpectedContentMissingUsesVerifierPrefix(t *testing.T) {
 	}
 }
 
+func TestStructuredVerifierUsesTargetPrefix(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name       string
+		verifySize int
+	}{
+		{name: "texture.dds", verifySize: 4},
+		{name: "archive.pak", verifySize: 12},
+		{name: "animation.anm", verifySize: 16},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			prefix := bytes.Repeat([]byte{'x'}, testCase.verifySize)
+			result := Analyze(testCase.name, prefix, ProfileThorough)
+			if result.RequiredPrefix != thoroughPrefixSize || !result.Has(FlagIncomplete) ||
+				!result.Has(FlagExpectedContentMissing) {
+				t.Fatalf("result with %d bytes = %+v, want target verifier rejection", len(prefix), result)
+			}
+
+			shortPrefix := prefix[:len(prefix)-1]
+			short := Analyze(testCase.name, shortPrefix, ProfileThorough)
+			if !short.Has(FlagIncomplete) || short.Has(FlagExpectedContentMissing) {
+				t.Fatalf("result with %d bytes = %+v, want no rejection before target verifier is complete", len(shortPrefix), short)
+			}
+		})
+	}
+}
+
 func TestOptionalPatternRefinementDoesNotRequireContent(t *testing.T) {
 	t.Parallel()
 

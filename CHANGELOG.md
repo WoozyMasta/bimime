@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning][].
   contextual targets must match or refine their path type family.
 * `ByContent` preserves the type detected from the prefix;
   contextual mappings affect only the resolved type and relation.
+* Structured probes carry per-target verifier byte requirements,
+  separate from their full discovery budgets.
 
 ## [0.2.1][] - 2026-04-03
 

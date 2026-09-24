@@ -231,9 +231,9 @@ func TestStructuredProbeCapabilities(t *testing.T) {
 		if capability.requiredPrefix < 1 || capability.requiredPrefix > thoroughPrefixSize {
 			t.Errorf("probe %d prefix requirement = %d, outside bounds", capability.kind, capability.requiredPrefix)
 		}
-		for _, typeID := range capability.typeIDs {
-			if _, ok := Lookup(typeID); !ok {
-				t.Errorf("probe %d references unregistered type %q", capability.kind, typeID)
+		for _, target := range capability.targets {
+			if _, ok := Lookup(target.typeID); !ok {
+				t.Errorf("probe %d references unregistered type %q", capability.kind, target.typeID)
 			}
 		}
 	}
@@ -247,7 +247,10 @@ func TestCompiledVerifierRequiredPrefixes(t *testing.T) {
 		want   int
 	}{
 		{typeID: "image.png", want: 8},
-		{typeID: "image.dds", want: thoroughPrefixSize},
+		{typeID: "image.dds", want: 4},
+		{typeID: "image.edds", want: 4},
+		{typeID: "bi.package.pak", want: 12},
+		{typeID: "bi.animation.anm", want: 16},
 		{typeID: "text.cfg", want: 0},
 		{typeID: "text.xml", want: 0},
 		{typeID: "bi.rvmat", want: 4},

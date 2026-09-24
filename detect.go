@@ -91,39 +91,45 @@ var builtinStructuredProbeCapabilities = []structuredProbeCapability{
 		kind:           structuredProbeFORM,
 		requiredPrefix: 16,
 		source:         ContentSourceStructure,
-		typeIDs: []TypeID{
-			"bi.package.pak",
-			"bi.db.rdb",
-			"bi.world.smd",
-			"bi.font.fnt",
-			"bi.object.xob",
-			"bi.animation.anm",
+		targets: []structuredProbeTarget{
+			{typeID: "bi.package.pak", verifyPrefix: 12},
+			{typeID: "bi.db.rdb", verifyPrefix: 12},
+			{typeID: "bi.world.smd", verifyPrefix: 12},
+			{typeID: "bi.font.fnt", verifyPrefix: 12},
+			{typeID: "bi.object.xob", verifyPrefix: 12},
+			{typeID: "bi.animation.anm", verifyPrefix: 16},
 		},
 	},
 	{
 		kind:           structuredProbeRIFF,
 		requiredPrefix: 12,
 		source:         ContentSourceStructure,
-		typeIDs:        []TypeID{"audio.wav", "image.webp"},
+		targets: []structuredProbeTarget{
+			{typeID: "audio.wav", verifyPrefix: 12},
+			{typeID: "image.webp", verifyPrefix: 12},
+		},
 	},
 	{
 		kind:           structuredProbeMP4,
 		requiredPrefix: 12,
 		source:         ContentSourceStructure,
-		typeIDs:        []TypeID{"video.mp4"},
+		targets:        []structuredProbeTarget{{typeID: "video.mp4", verifyPrefix: 12}},
 	},
 	{
 		kind:           structuredProbeMP3,
 		scope:          probeVerify,
 		requiredPrefix: 4,
 		source:         ContentSourceStructure,
-		typeIDs:        []TypeID{"audio.mp3"},
+		targets:        []structuredProbeTarget{{typeID: "audio.mp3", verifyPrefix: 4}},
 	},
 	{
 		kind:           structuredProbeDDS,
 		requiredPrefix: 156,
 		source:         ContentSourceStructure,
-		typeIDs:        []TypeID{"image.dds", "image.edds"},
+		targets: []structuredProbeTarget{
+			{typeID: "image.dds", verifyPrefix: 4},
+			{typeID: "image.edds", verifyPrefix: 4},
+		},
 	},
 }
 
@@ -171,10 +177,18 @@ type pathPatternRefinement struct {
 	requiredPrefix int
 }
 
+// structuredProbeTarget declares one type identified by a structured detector.
+type structuredProbeTarget struct {
+	// typeID is the stable type id produced by the detector.
+	typeID TypeID
+	// verifyPrefix is sufficient to reject this target when no content matches.
+	verifyPrefix int
+}
+
 // structuredProbeCapability binds a structured detector to its byte and type requirements.
 type structuredProbeCapability struct {
-	// typeIDs lists the types this detector can identify.
-	typeIDs []TypeID
+	// targets lists the types and their individual verifier requirements.
+	targets []structuredProbeTarget
 	// requiredPrefix is the maximum prefix needed to run this detector fully.
 	requiredPrefix int
 	// kind selects the detector implementation.
@@ -359,7 +373,7 @@ func detectByMagicRecord(prefix []byte) (registryRecord, ContentSource, bool) {
 		}
 
 		typeID, ok := runStructuredProbe(capability.kind, prefix)
-		if !ok || !slices.Contains(capability.typeIDs, typeID) {
+		if !ok || !hasStructuredProbeTarget(capability, typeID) {
 			continue
 		}
 
@@ -399,12 +413,12 @@ func detectVerifyRecord(prefix []byte, pathType TypeID) (registryRecord, Content
 	}
 
 	for _, capability := range builtinRegistry.structuredProbeCapabilities {
-		if capability.scope != probeVerify || !slices.Contains(capability.typeIDs, pathType) {
+		if capability.scope != probeVerify || !hasStructuredProbeTarget(capability, pathType) {
 			continue
 		}
 
 		typeID, ok := runStructuredProbe(capability.kind, prefix)
-		if !ok || !slices.Contains(capability.typeIDs, typeID) {
+		if !ok || !hasStructuredProbeTarget(capability, typeID) {
 			continue
 		}
 
@@ -428,6 +442,17 @@ func detectVerifyRecord(prefix []byte, pathType TypeID) (registryRecord, Content
 	}
 
 	return registryRecord{}, ContentSourceNone, false
+}
+
+// hasStructuredProbeTarget reports whether a detector declares the requested type.
+func hasStructuredProbeTarget(capability structuredProbeCapability, typeID TypeID) bool {
+	for _, target := range capability.targets {
+		if target.typeID == typeID {
+			return true
+		}
+	}
+
+	return false
 }
 
 // detectNormalProbeRecord runs only the static targets enabled for one path type.

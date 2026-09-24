@@ -115,7 +115,7 @@ func buildRegistry(
 		registry.contextualRefinements[key] = targetID
 	}
 	for index, capability := range structuredProbes {
-		capability.typeIDs = append([]TypeID(nil), capability.typeIDs...)
+		capability.targets = append([]structuredProbeTarget(nil), capability.targets...)
 		registry.structuredProbeCapabilities[index] = capability
 	}
 
@@ -226,14 +226,6 @@ func buildRegistry(
 		registry.thoroughPrefix = max(registry.thoroughPrefix, len(match.signature))
 	}
 	for _, capability := range registry.structuredProbeCapabilities {
-		if capability.requiredPrefix < 1 || capability.requiredPrefix > thoroughPrefixSize {
-			return compiledRegistry{}, registryErrorf(
-				"structured probe %d has invalid prefix requirement %d",
-				capability.kind,
-				capability.requiredPrefix,
-			)
-		}
-
 		registry.thoroughPrefix = max(registry.thoroughPrefix, capability.requiredPrefix)
 	}
 
@@ -288,9 +280,9 @@ func compileVerifierRequiredPrefixes(
 	}
 
 	for _, capability := range registry.structuredProbeCapabilities {
-		for _, typeID := range capability.typeIDs {
-			if _, ok := registry.byID[string(typeID)]; ok {
-				compiled[typeID] = max(compiled[typeID], capability.requiredPrefix)
+		for _, target := range capability.targets {
+			if _, ok := registry.byID[string(target.typeID)]; ok {
+				compiled[target.typeID] = max(compiled[target.typeID], target.verifyPrefix)
 			}
 		}
 	}
@@ -307,23 +299,41 @@ func validateStructuredProbeCapabilities(registry compiledRegistry) error {
 		}
 
 		seen[capability.kind] = struct{}{}
-		if capability.source != ContentSourceStructure || len(capability.typeIDs) == 0 {
+		if capability.source != ContentSourceStructure || len(capability.targets) == 0 {
 			return registryErrorf("structured probe %d has no source or type targets", capability.kind)
 		}
+
+		if capability.requiredPrefix < 1 || capability.requiredPrefix > thoroughPrefixSize {
+			return registryErrorf(
+				"structured probe %d has invalid prefix requirement %d",
+				capability.kind,
+				capability.requiredPrefix,
+			)
+		}
+
 		if capability.scope != probeDiscover && capability.scope != probeVerify {
 			return registryErrorf("structured probe %d has invalid scope %d", capability.kind, capability.scope)
 		}
 
-		seenTargets := make(map[TypeID]struct{}, len(capability.typeIDs))
-		for _, typeID := range capability.typeIDs {
-			if _, exists := registry.byID[string(typeID)]; !exists {
-				return registryErrorf("structured probe %d references unknown type %q", capability.kind, typeID)
+		seenTargets := make(map[TypeID]struct{}, len(capability.targets))
+		for _, target := range capability.targets {
+			if _, exists := registry.byID[string(target.typeID)]; !exists {
+				return registryErrorf("structured probe %d references unknown type %q", capability.kind, target.typeID)
 			}
-			if _, exists := seenTargets[typeID]; exists {
-				return registryErrorf("structured probe %d repeats type %q", capability.kind, typeID)
+			if _, exists := seenTargets[target.typeID]; exists {
+				return registryErrorf("structured probe %d repeats type %q", capability.kind, target.typeID)
 			}
 
-			seenTargets[typeID] = struct{}{}
+			if target.verifyPrefix < 1 || target.verifyPrefix > capability.requiredPrefix {
+				return registryErrorf(
+					"structured probe %d target %q has invalid verifier prefix %d",
+					capability.kind,
+					target.typeID,
+					target.verifyPrefix,
+				)
+			}
+
+			seenTargets[target.typeID] = struct{}{}
 		}
 	}
 

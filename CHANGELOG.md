@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning][].
   contextual mappings affect only the resolved type and relation.
 * Structured probes carry per-target verifier byte requirements,
   separate from their full discovery budgets.
+* Dynamic filename rules can require both a prefix and suffix,
+  limiting map group cluster matching to XML files.
 
 ## [0.2.1][] - 2026-04-03
 

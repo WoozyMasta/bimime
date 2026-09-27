@@ -32,18 +32,18 @@ type compiledRegistry struct {
 	verifierRequiredPrefix map[TypeID]int
 	// fileNames maps normalized exact basenames to type ids.
 	fileNames map[string]string
-	// filePrefixes stores filename prefix rules from longest to shortest.
-	filePrefixes []filePrefixRecord
-	// fileSuffixes stores filename suffix rules from longest to shortest.
-	fileSuffixes []fileSuffixRecord
+	// fileRules stores normalized filename prefix and suffix rules by specificity.
+	fileRules []fileRule
 	// thoroughPrefix is the maximum global prefix required by content probes.
 	thoroughPrefix int
 }
 
-// fileKeyRecord stores one normalized filename prefix or suffix rule.
-type fileKeyRecord struct {
-	// key is the normalized rule value.
-	key string
+// fileRule matches a filename prefix, suffix, or both.
+type fileRule struct {
+	// prefix is the required filename prefix, when set.
+	prefix string
+	// suffix is the required filename suffix, when set.
+	suffix string
 	// typeID is the stable id selected by this rule.
 	typeID string
 }
@@ -52,14 +52,12 @@ type fileKeyRecord struct {
 func mustBuildRegistry(
 	definitions []registryRecord,
 	fileNames map[string]string,
-	filePrefixes map[string]string,
-	fileSuffixes map[string]string,
+	fileRules []fileRule,
 ) compiledRegistry {
 	registry, err := buildRegistry(
 		definitions,
 		fileNames,
-		filePrefixes,
-		fileSuffixes,
+		fileRules,
 		builtinContextualRefinements,
 		builtinNormalProbeCapabilities,
 		builtinPathPatternRefinements,
@@ -80,8 +78,7 @@ func registryErrorf(format string, args ...any) error {
 func buildRegistry(
 	definitions []registryRecord,
 	fileNames map[string]string,
-	filePrefixes map[string]string,
-	fileSuffixes map[string]string,
+	fileRules []fileRule,
 	contextual map[contextualRefinementKey]TypeID,
 	normalProbes []normalProbeCapability,
 	patterns []pathPatternRefinement,
@@ -201,24 +198,9 @@ func buildRegistry(
 		return compiledRegistry{}, err
 	}
 
-	prefixRules, err := compileFileRules(filePrefixes, registry.byID, "prefix")
+	registry.fileRules, err = compileFileRules(fileRules, registry.byID)
 	if err != nil {
 		return compiledRegistry{}, err
-	}
-
-	registry.filePrefixes = make([]filePrefixRecord, len(prefixRules))
-	for index, rule := range prefixRules {
-		registry.filePrefixes[index] = filePrefixRecord{prefix: rule.key, typeID: rule.typeID}
-	}
-
-	suffixRules, err := compileFileRules(fileSuffixes, registry.byID, "suffix")
-	if err != nil {
-		return compiledRegistry{}, err
-	}
-
-	registry.fileSuffixes = make([]fileSuffixRecord, len(suffixRules))
-	for index, rule := range suffixRules {
-		registry.fileSuffixes[index] = fileSuffixRecord{suffix: rule.key, typeID: rule.typeID}
 	}
 
 	registry.magic = buildMagicIndex(registry.records)
@@ -372,41 +354,64 @@ func compileFileKeys(
 	return compiled, nil
 }
 
-// compileFileRules compiles ordered prefix or suffix rules and validates targets.
+// compileFileRules normalizes filename rules and validates their targets.
 func compileFileRules(
-	source map[string]string,
+	source []fileRule,
 	byID map[string]registryRecord,
-	kind string,
-) ([]fileKeyRecord, error) {
-	compiled := make([]fileKeyRecord, 0, len(source))
-	seen := make(map[string]struct{}, len(source))
+) ([]fileRule, error) {
+	compiled := make([]fileRule, 0, len(source))
+	seen := make(map[[2]string]struct{}, len(source))
 
-	for rawKey, rawTypeID := range source {
-		key := lowerKey(strings.TrimSpace(rawKey))
-		typeID := lowerKey(strings.TrimSpace(rawTypeID))
-		if key == "" || typeID == "" {
-			return nil, registryErrorf("empty %s rule or type id", kind)
+	for _, rule := range source {
+		rule.prefix = lowerKey(strings.TrimSpace(rule.prefix))
+		rule.suffix = lowerKey(strings.TrimSpace(rule.suffix))
+		rule.typeID = lowerKey(strings.TrimSpace(rule.typeID))
+		if (rule.prefix == "" && rule.suffix == "") || rule.typeID == "" {
+			return nil, registryErrorf("empty filename rule or type id")
 		}
-		if _, ok := byID[typeID]; !ok {
-			return nil, registryErrorf("%s rule %q references unknown type %q", kind, key, typeID)
+
+		if _, ok := byID[rule.typeID]; !ok {
+			return nil, registryErrorf(
+				"filename rule %q%q references unknown type %q",
+				rule.prefix,
+				rule.suffix,
+				rule.typeID,
+			)
 		}
+
+		key := [2]string{rule.prefix, rule.suffix}
 		if _, exists := seen[key]; exists {
-			return nil, registryErrorf("duplicate normalized %s rule %q", kind, key)
+			return nil, registryErrorf("duplicate normalized filename rule %q%q", rule.prefix, rule.suffix)
 		}
 
 		seen[key] = struct{}{}
-		compiled = append(compiled, fileKeyRecord{key: key, typeID: typeID})
+		compiled = append(compiled, rule)
 	}
 
-	slices.SortFunc(compiled, func(a, b fileKeyRecord) int {
-		if len(a.key) > len(b.key) {
-			return -1
-		}
-		if len(a.key) < len(b.key) {
+	slices.SortFunc(compiled, func(a, b fileRule) int {
+		if (a.prefix != "") != (b.prefix != "") {
+			if a.prefix != "" {
+				return -1
+			}
 			return 1
 		}
+		if len(a.prefix) > len(b.prefix) {
+			return -1
+		}
+		if len(a.prefix) < len(b.prefix) {
+			return 1
+		}
+		if len(a.suffix) > len(b.suffix) {
+			return -1
+		}
+		if len(a.suffix) < len(b.suffix) {
+			return 1
+		}
+		if order := strings.Compare(a.prefix, b.prefix); order != 0 {
+			return order
+		}
 
-		return strings.Compare(a.key, b.key)
+		return strings.Compare(a.suffix, b.suffix)
 	})
 
 	return compiled, nil

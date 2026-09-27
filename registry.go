@@ -1622,22 +1622,15 @@ var builtinFileNames = map[string]string{
 	"mapgroupproto.xml":           "bi.ce.mapgroupproto",
 }
 
-// builtinFilePrefixes declares rolling filename prefixes and their type ids.
-// Used for rolling exports like mapgroupcluster1.xml, mapgroupcluster2.xml.
-var builtinFilePrefixes = map[string]string{
-	"mapgroupcluster": "bi.ce.mapgroupcluster",
-}
-
-// builtinFileSuffixes declares dynamic filename suffixes and their type ids.
-// Used for dynamic names like hare_territories.xml.
-var builtinFileSuffixes = map[string]string{
-	"_territories.xml": "bi.ce.env.territories",
+// builtinFileRules declares filename patterns for dynamic Central Economy files.
+var builtinFileRules = []fileRule{
+	{prefix: "mapgroupcluster", suffix: ".xml", typeID: "bi.ce.mapgroupcluster"},
+	{suffix: "_territories.xml", typeID: "bi.ce.env.territories"},
 }
 
 // builtinRegistry contains the validated immutable indexes used by the package.
 var builtinRegistry = mustBuildRegistry(
 	registryDefinitions,
 	builtinFileNames,
-	builtinFilePrefixes,
-	builtinFileSuffixes,
+	builtinFileRules,
 )

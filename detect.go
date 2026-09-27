@@ -133,18 +133,6 @@ var builtinStructuredProbeCapabilities = []structuredProbeCapability{
 	},
 }
 
-// filePrefixRecord stores one filename-prefix mapping to a type id.
-type filePrefixRecord struct {
-	prefix string
-	typeID string
-}
-
-// fileSuffixRecord stores one filename-suffix mapping to a type id.
-type fileSuffixRecord struct {
-	suffix string
-	typeID string
-}
-
 // contextualRefinementKey identifies a path and content pair that refines to a format-specific type.
 type contextualRefinementKey struct {
 	// pathType is the type inferred from the logical name.
@@ -308,25 +296,15 @@ func detectByPathRecordWithExtension(path string, extension string) (registryRec
 		}
 	}
 
-	for _, prefixRecord := range builtinRegistry.filePrefixes {
-		if !strings.HasPrefix(fileName, prefixRecord.prefix) {
+	for _, rule := range builtinRegistry.fileRules {
+		if rule.prefix != "" && !strings.HasPrefix(fileName, rule.prefix) {
+			continue
+		}
+		if rule.suffix != "" && !strings.HasSuffix(fileName, rule.suffix) {
 			continue
 		}
 
-		record, ok := builtinRegistry.byID[prefixRecord.typeID]
-		if !ok {
-			continue
-		}
-
-		return record, true
-	}
-
-	for _, suffixRecord := range builtinRegistry.fileSuffixes {
-		if !strings.HasSuffix(fileName, suffixRecord.suffix) {
-			continue
-		}
-
-		record, ok := builtinRegistry.byID[suffixRecord.typeID]
+		record, ok := builtinRegistry.byID[rule.typeID]
 		if !ok {
 			continue
 		}

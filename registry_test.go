@@ -129,7 +129,11 @@ func TestAnalyzePathMappings(t *testing.T) {
 		{name: "x.P3D", want: "bi.p3d"},
 		{name: "config.cpp", want: "bi.config.main.cpp"},
 		{name: "folder/texHeaders.bin", want: "bi.texheaders"},
+		{name: "mapgroupcluster.xml", want: "bi.ce.mapgroupcluster"},
 		{name: "mapgroupcluster2.xml", want: "bi.ce.mapgroupcluster"},
+		{name: "mapgroupcluster.exe", want: UnknownID},
+		{name: "mapgroupcluster", want: UnknownID},
+		{name: "mapgroupcluster.xml.bak", want: UnknownID},
 		{name: "env/hare_territories.xml", want: "bi.ce.env.territories"},
 	}
 
@@ -372,7 +376,7 @@ func TestBuildRegistryRejectsInvalidDefinitions(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := buildRegistry(testCase.definitions, testCase.fileNames, nil, nil, nil, nil, nil, nil)
+			_, err := buildRegistry(testCase.definitions, testCase.fileNames, nil, nil, nil, nil, nil)
 			if err == nil || !errors.Is(err, errInvalidRegistry) {
 				t.Fatalf("buildRegistry error = %v, want invalid registry error", err)
 			}
@@ -468,7 +472,6 @@ func TestBuildRegistryRejectsInvalidNormalProbes(t *testing.T) {
 				nil,
 				nil,
 				nil,
-				nil,
 				[]normalProbeCapability{{
 					pathType:       testCase.pathType,
 					scope:          probeRefine,
@@ -518,7 +521,7 @@ func TestBuildRegistryRejectsIncompatibleContextualRefinement(t *testing.T) {
 		{pathType: "test.path", contentType: "test.content"}: "test.target",
 	}
 
-	_, err := buildRegistry(definitions, nil, nil, nil, contextual, nil, nil, nil)
+	_, err := buildRegistry(definitions, nil, nil, contextual, nil, nil, nil)
 	if err == nil || !errors.Is(err, errInvalidRegistry) {
 		t.Fatalf("buildRegistry error = %v, want invalid contextual refinement error", err)
 	}

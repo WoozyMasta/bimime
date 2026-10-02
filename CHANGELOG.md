@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning][].
   separate from their full discovery budgets.
 * Dynamic filename rules can require both a prefix and suffix,
   limiting map group cluster matching to XML files.
+* EDDS discovery recognizes the `ENF1` header marker
+  while retaining legacy block-table detection.
 
 ## [0.2.1][] - 2026-04-03
 

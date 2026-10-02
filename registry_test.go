@@ -17,6 +17,13 @@ func TestProbeContentDetectors(t *testing.T) {
 	copy(edds[128:132], []byte("COPY"))
 	edds[132] = 4
 
+	modernEDDS := make([]byte, 40)
+	copy(modernEDDS[:4], []byte("DDS "))
+	copy(modernEDDS[36:40], []byte("ENF1"))
+
+	genericDDS := make([]byte, 40)
+	copy(genericDDS[:4], []byte("DDS "))
+
 	testCases := []struct {
 		name string
 		data []byte
@@ -28,6 +35,8 @@ func TestProbeContentDetectors(t *testing.T) {
 		{name: "gif", data: []byte("GIF89a"), want: "image.gif"},
 		{name: "webp", data: []byte("RIFF\x24\x00\x00\x00WEBP"), want: "image.webp"},
 		{name: "edds", data: edds, want: "image.edds"},
+		{name: "edds-enfusion-marker", data: modernEDDS, want: "image.edds"},
+		{name: "dds-without-edds-marker", data: genericDDS, want: "image.dds"},
 		{name: "ogg", data: []byte("OggS\x00\x02"), want: "audio.ogg"},
 		{name: "mp3-id3", data: []byte("ID3\x04\x00\x00"), want: "audio.mp3"},
 		{name: "wav", data: []byte("RIFF\x24\x00\x00\x00WAVE"), want: "audio.wav"},

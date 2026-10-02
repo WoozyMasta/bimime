@@ -13,6 +13,9 @@ import (
 
 const maxShortDescriptionLen = 60
 
+// eddsEnfusionMarker is Reserved1[1] encoded as a little-endian FourCC.
+const eddsEnfusionMarker uint32 = 0x31464E45
+
 // probeScope controls when a detector is allowed to contribute evidence.
 type probeScope uint8
 
@@ -610,8 +613,16 @@ func detectDDSFamilyTypeID(prefix []byte) (string, bool) {
 	return "image.dds", true
 }
 
-// isEDDSPrefix reports whether DDS payload prefix looks like an EDDS block table.
+// isEDDSPrefix reports positive EDDS markers without treating their absence as DDS proof.
 func isEDDSPrefix(prefix []byte) bool {
+	// DDS magic and the header fields place Reserved1[1] at bytes 36 through 39.
+	const reserved1SecondOffset = 36
+	const reserved1SecondEnd = reserved1SecondOffset + 4
+	if len(prefix) >= reserved1SecondEnd &&
+		binary.LittleEndian.Uint32(prefix[reserved1SecondOffset:reserved1SecondEnd]) == eddsEnfusionMarker {
+		return true
+	}
+
 	offset, ok := eddsBlockTableOffset(prefix)
 	if !ok || len(prefix) < offset+8 {
 		return false

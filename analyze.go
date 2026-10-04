@@ -72,6 +72,7 @@ func makePlan(name string, profile Profile) analysisPlan {
 		}
 
 		plan.verifierPrefix = builtinRegistry.verifierRequiredPrefix[path.typ.ID]
+		plan.requiredPrefix = max(plan.requiredPrefix, plan.verifierPrefix)
 		for _, refinement := range builtinRegistry.pathPatternRefinements {
 			if refinement.scope != probeRefine || path.typ.ID != refinement.pathType {
 				continue

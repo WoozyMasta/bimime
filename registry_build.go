@@ -205,10 +205,14 @@ func buildRegistry(
 
 	registry.magic = buildMagicIndex(registry.records)
 	for _, match := range registry.magic {
-		registry.thoroughPrefix = max(registry.thoroughPrefix, len(match.signature))
+		if match.scope == probeDiscover {
+			registry.thoroughPrefix = max(registry.thoroughPrefix, len(match.signature))
+		}
 	}
 	for _, capability := range registry.structuredProbeCapabilities {
-		registry.thoroughPrefix = max(registry.thoroughPrefix, capability.requiredPrefix)
+		if capability.scope == probeDiscover {
+			registry.thoroughPrefix = max(registry.thoroughPrefix, capability.requiredPrefix)
+		}
 	}
 
 	if err := validateMagicIndex(registry.magic); err != nil {

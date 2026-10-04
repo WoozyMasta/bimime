@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning][].
   limiting map group cluster matching to XML files.
 * EDDS discovery recognizes the `ENF1` header marker
   while retaining legacy block-table detection.
+* Thorough global prefix budgets include discovery probes only;
+  verifier requirements remain path-specific.
 
 ## [0.2.1][] - 2026-04-03
 

@@ -252,6 +252,72 @@ func TestStructuredProbeCapabilities(t *testing.T) {
 	}
 }
 
+func TestRegistryThoroughPrefixExcludesVerifyOnlyProbes(t *testing.T) {
+	t.Parallel()
+
+	pathRecord := registryRecord{typ: Type{
+		ID:          "test.path",
+		MIME:        "application/octet-stream",
+		Description: "Path-scoped verifier target",
+		Extensions:  []string{"path"},
+		Traits:      TraitBinary,
+	}}
+	discoveryRecord := registryRecord{
+		typ: Type{
+			ID:          "test.discovered",
+			MIME:        "application/octet-stream",
+			Description: "Globally discoverable type",
+			Extensions:  []string{"discovered"},
+			Traits:      TraitBinary,
+		},
+		magic: [][]byte{[]byte("DISCOVER")},
+	}
+	staticVerifierRecord := registryRecord{
+		typ: Type{
+			ID:          "test.static-verifier",
+			MIME:        "application/octet-stream",
+			Description: "Path-scoped static verifier",
+			Extensions:  []string{"verify"},
+			Traits:      TraitBinary,
+		},
+		magic:      [][]byte{make([]byte, 64)},
+		magicScope: probeVerify,
+	}
+	structuredVerifier := structuredProbeCapability{
+		kind:           structuredProbeMP3,
+		scope:          probeVerify,
+		requiredPrefix: 32,
+		source:         ContentSourceStructure,
+		targets: []structuredProbeTarget{{
+			typeID:       "test.path",
+			verifyPrefix: 32,
+		}},
+	}
+
+	registry, err := buildRegistry(
+		[]registryRecord{pathRecord, discoveryRecord, staticVerifierRecord},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		[]structuredProbeCapability{structuredVerifier},
+	)
+	if err != nil {
+		t.Fatalf("buildRegistry() error = %v", err)
+	}
+
+	if registry.thoroughPrefix != len(discoveryRecord.magic[0]) {
+		t.Fatalf("thorough prefix = %d, want discovery prefix %d", registry.thoroughPrefix, len(discoveryRecord.magic[0]))
+	}
+	if got := registry.verifierRequiredPrefix[pathRecord.typ.ID]; got != 32 {
+		t.Fatalf("path verifier prefix = %d, want 32", got)
+	}
+	if got := registry.verifierRequiredPrefix[staticVerifierRecord.typ.ID]; got != 64 {
+		t.Fatalf("static verifier prefix = %d, want 64", got)
+	}
+}
+
 func TestCompiledVerifierRequiredPrefixes(t *testing.T) {
 	t.Parallel()
 

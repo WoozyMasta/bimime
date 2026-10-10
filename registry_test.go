@@ -230,6 +230,64 @@ func TestRegistryCopiesAndMetadata(t *testing.T) {
 	}
 }
 
+func TestRegistryFormatTraits(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		typeID TypeID
+		want   Trait
+		avoid  Trait
+	}{
+		{typeID: "bi.pbo", want: TraitBinary | TraitContainer | TraitArchive},
+		{typeID: "bi.package.pak", want: TraitBinary | TraitContainer | TraitArchive},
+		{typeID: "bi.audio.snd", want: TraitBinary | TraitAudio | TraitContainer},
+		{typeID: "bi.world.smd", want: TraitBinary | TraitContainer},
+		{typeID: "image.edds", want: TraitBinary | TraitImage | TraitContainer},
+		{typeID: "image.webp", want: TraitBinary | TraitImage | TraitContainer},
+		{typeID: "audio.ogg", want: TraitBinary | TraitAudio | TraitContainer},
+		{typeID: "audio.wav", want: TraitBinary | TraitAudio | TraitContainer},
+		{typeID: "video.mp4", want: TraitBinary | TraitVideo | TraitContainer},
+		{typeID: "model.glb", want: TraitBinary | TraitContainer},
+		{typeID: "application.xls", want: TraitBinary | TraitContainer, avoid: TraitArchive},
+		{typeID: "application.xlsx", want: TraitBinary | TraitContainer, avoid: TraitArchive},
+		{typeID: "application.ods", want: TraitBinary | TraitContainer, avoid: TraitArchive},
+		{typeID: "bi.p3d.mlod", want: TraitBinary | TraitSource},
+		{typeID: "bi.p3d.odol", want: TraitBinary | TraitCompiled},
+		{typeID: "bi.wrp.8wvr", want: TraitBinary | TraitSource},
+		{typeID: "bi.wrp.oprw", want: TraitBinary | TraitCompiled},
+		{typeID: "bi.rvmat", want: TraitText | TraitSource},
+		{typeID: "bi.rvmat.bin", want: TraitBinary | TraitCompiled},
+		{typeID: "bi.surface.bisurf", want: TraitText | TraitSource},
+		{typeID: "bi.surface.bisurf.bin", want: TraitBinary | TraitCompiled},
+		{typeID: "bi.config.main.cpp", want: TraitText | TraitSource},
+		{typeID: "bi.config.main.bin", want: TraitBinary | TraitCompiled},
+		{typeID: "bi.mod.cpp", want: TraitText | TraitSource},
+		{typeID: "bi.mod.bin", want: TraitBinary | TraitCompiled},
+		{typeID: "bi.shader.dxbc", want: TraitBinary | TraitCompiled},
+		{typeID: "bi.object.xob", want: TraitBinary | TraitCompiled},
+		{typeID: "text.sqf", want: TraitText | TraitSource},
+		{typeID: "application.sqfc", want: TraitBinary | TraitCompiled},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(string(testCase.typeID), func(t *testing.T) {
+			t.Parallel()
+
+			typ, ok := Lookup(testCase.typeID)
+			if !ok {
+				t.Fatalf("Lookup(%q) did not find a registry type", testCase.typeID)
+			}
+			if got := typ.Traits & testCase.want; got != testCase.want {
+				t.Fatalf("traits for %q = %#x, missing %#x", testCase.typeID, typ.Traits, testCase.want&^got)
+			}
+			if got := typ.Traits & testCase.avoid; got != 0 {
+				t.Fatalf("traits for %q = %#x, unexpectedly has %#x", testCase.typeID, typ.Traits, got)
+			}
+		})
+	}
+}
+
 func TestStructuredProbeCapabilities(t *testing.T) {
 	t.Parallel()
 

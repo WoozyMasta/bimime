@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning][].
   while retaining legacy block-table detection.
 * Thorough global prefix budgets include discovery probes only;
   verifier requirements remain path-specific.
+* Registry traits mark confirmed archive/container formats
+  and explicit source/compiled variants.
 
 ## [0.2.1][] - 2026-04-03
 

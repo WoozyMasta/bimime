@@ -18,13 +18,13 @@ const (
 	TraitText Trait = 1 << iota
 	// TraitBinary marks a type whose payload is binary.
 	TraitBinary
-	// TraitSource marks source or editable content.
+	// TraitSource marks source or editable authoring content.
 	TraitSource
-	// TraitCompiled marks compiled content.
+	// TraitCompiled marks content produced by compilation or binarization.
 	TraitCompiled
-	// TraitContainer marks a container format.
+	// TraitContainer marks a format that encapsulates structured streams or parts.
 	TraitContainer
-	// TraitArchive marks an archive format.
+	// TraitArchive marks a format primarily used to package files as independent entries.
 	TraitArchive
 	// TraitImage marks an image format.
 	TraitImage

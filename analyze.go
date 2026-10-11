@@ -191,7 +191,8 @@ func AnalyzeReader(name string, reader io.Reader, profile Profile) (Result, erro
 	return analyzePlanned(plan, prefix), nil
 }
 
-// AnalyzeFile opens the exact supplied path and reads only its planned prefix.
+// AnalyzeFile classifies path and opens it only when the selected profile requires content.
+// Path-only analysis does not verify file existence.
 func AnalyzeFile(path string, profile Profile) (Result, error) {
 	plan := makePlan(path, profile)
 	required := plan.requiredPrefix

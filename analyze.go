@@ -173,7 +173,9 @@ func Probe(name string, prefix []byte) Result {
 	return Analyze(name, prefix, ProfileThorough)
 }
 
-// AnalyzeReader reads only the prefix planned for the selected profile.
+// AnalyzeReader consumes at most the prefix planned for the selected profile.
+// After the call, the reader remains positioned after the bytes consumed,
+// so callers can continue reading the remaining data.
 func AnalyzeReader(name string, reader io.Reader, profile Profile) (Result, error) {
 	plan := makePlan(name, profile)
 	required := plan.requiredPrefix

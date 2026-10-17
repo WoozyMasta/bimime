@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD024 -->
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -13,39 +14,40 @@ and this project adheres to [Semantic Versioning][].
 ### Removed
 -->
 
-## Unreleased
+## [0.3.0][] - 2026-04-03
+
+### Added
+
+* Recognize modern Enfusion EDDS headers through the `ENF1` marker,
+  while retaining legacy EDDS detection.
 
 ### Changed
 
-* Breaking: replace plan and validation options with profile-based
-  classification results that preserve path and content evidence.
-* Registry types now declare text/binary traits and compatible refinement
-  families explicitly; contextual and pattern refinements are table-driven.
-* Structured probes declare their targets
-  and byte requirements in one capability catalog;
-  Normal refinements run only declared targets.
-* Weak PAA/BMP signatures and raw MP3 frame headers verify matching paths
-  without enabling global content discovery.
-* Thorough analysis reports missing expected content
-  as soon as its path verifier has enough bytes,
-  independent of the global prefix budget.
-* Optional path-pattern refinements no longer imply required content.
-* Runtime classification uses compiled registry metadata;
-  contextual targets must match or refine their path type family.
-* `ByContent` preserves the type detected from the prefix;
-  contextual mappings affect only the resolved type and relation.
-* Structured probes carry per-target verifier byte requirements,
-  separate from their full discovery budgets.
-* Dynamic filename rules can require both a prefix and suffix,
-  limiting map group cluster matching to XML files.
-* EDDS discovery recognizes the `ENF1` header marker
-  while retaining legacy block-table detection.
-* Thorough global prefix budgets include discovery probes only;
-  verifier requirements remain path-specific.
-* Registry traits mark confirmed archive/container formats
-  and explicit source/compiled variants.
-* Thorough model config pattern probes skip regexp scans when `CfgModels`
-  is absent from the prefix.
+* Breaking: replace the plan/options and strict-validation API with
+  `ProfileFast`, `ProfileNormal`, and `ProfileThorough` bounded analysis.
+  Results now retain separate path and content evidence, their relation,
+  and probe status. `RequiredPrefix` replaces `NeedsContent`
+  with an exact byte budget; the reusable `Analyzer` API is removed.
+* Lower the minimum supported Go version to 1.21.
+* Registry metadata now identifies source, compiled, container,
+  and archive formats for downstream policy.
+* Speed up Thorough model-config checks when `CfgModels` is absent.
+
+### Fixed
+
+* Apply the planned prefix limit to caller-provided data,
+  keeping `Analyze` consistent with reader and file analysis.
+* Restrict weak PAA, BMP, and raw MP3 frame signatures to matching paths;
+  they no longer discover unrelated binary files.
+* Base missing-content flags on each verifier's required bytes.
+  Optional `.cfg` and `.xml` refinements
+  no longer report their marker as mandatory,
+  and path-only verifiers do not inflate the global Thorough budget.
+* Preserve raw content evidence in `ByContent`;
+  contextual RAP mappings affect only the resolved type and relation.
+* Match `mapgroupcluster` refinements only for names ending in `.xml`.
+
+[0.3.0]: https://github.com/WoozyMasta/bimime/compare/v0.2.1...v0.3.0
 
 ## [0.2.1][] - 2026-04-03
 

@@ -85,11 +85,40 @@ func BenchmarkAnalyze(b *testing.B) {
 		prefix  []byte
 		profile Profile
 	}{
-		{label: "Fast", name: "texture.png", profile: ProfileFast},
-		{label: "NormalPathOnly", name: "script.sqf", profile: ProfileNormal},
-		{label: "NormalRefine4B", name: "model.p3d", prefix: []byte("ODOL"), profile: ProfileNormal},
-		{label: "ThoroughBinary", name: "texture.png", prefix: thoroughPrefix, profile: ProfileThorough},
-		{label: "ThoroughPattern4K", name: "vehicle.cfg", prefix: patternPrefix, profile: ProfileThorough},
+		{
+			label:   "Fast",
+			name:    "texture.png",
+			profile: ProfileFast,
+		},
+		{
+			label:   "NormalPathOnly",
+			name:    "script.sqf",
+			profile: ProfileNormal,
+		},
+		{
+			label:   "NormalRefine4B",
+			name:    "model.p3d",
+			prefix:  []byte("ODOL"),
+			profile: ProfileNormal,
+		},
+		{
+			label:   "ThoroughBinary",
+			name:    "texture.png",
+			prefix:  thoroughPrefix,
+			profile: ProfileThorough,
+		},
+		{
+			label:   "ThoroughPattern4K",
+			name:    "vehicle.cfg",
+			prefix:  patternPrefix,
+			profile: ProfileThorough,
+		},
+		{
+			label:   "ThoroughPatternMiss4K",
+			name:    "vehicle.cfg",
+			prefix:  bytes.Repeat([]byte{'x'}, semanticPrefixSize),
+			profile: ProfileThorough,
+		},
 	}
 
 	for _, testCase := range testCases {

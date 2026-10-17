@@ -206,6 +206,32 @@ func TestAnalyzePatternRefinement(t *testing.T) {
 	}
 }
 
+func TestAnalyzePatternHintPreservesRegexpSemantics(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		text string
+		want TypeID
+	}{
+		{name: "case insensitive", text: "CLASS   CFGMODELS", want: "bi.model.cfg"},
+		{name: "word boundary before class", text: "myclass CfgModels", want: "text.cfg"},
+		{name: "word boundary after CfgModels", text: "class CfgModelsExtra", want: "text.cfg"},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := Analyze("vehicle.cfg", []byte(testCase.text), ProfileThorough)
+			if result.Type != testCase.want {
+				t.Fatalf("Analyze type = %q, want %q", result.Type, testCase.want)
+			}
+		})
+	}
+}
+
 func TestAnalyzeHonorsRequiredPrefixBudget(t *testing.T) {
 	t.Parallel()
 

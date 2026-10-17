@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning][].
   verifier requirements remain path-specific.
 * Registry traits mark confirmed archive/container formats
   and explicit source/compiled variants.
+* Thorough model config pattern probes skip regexp scans when `CfgModels`
+  is absent from the prefix.
 
 ## [0.2.1][] - 2026-04-03
 

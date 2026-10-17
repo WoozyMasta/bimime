@@ -5,6 +5,7 @@
 package bimime
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -255,6 +256,10 @@ func readPrefix(reader io.Reader, limit int) ([]byte, error) {
 
 // matchRecordPatterns reports whether a record's semantic verifier matches the prefix.
 func matchRecordPatterns(record registryRecord, prefix []byte) bool {
+	if record.contentHint != "" && !containsFoldASCII(prefix, record.contentHint) {
+		return false
+	}
+
 	for _, pattern := range record.contentPatterns {
 		if pattern.Match(prefix) {
 			return true
@@ -262,6 +267,60 @@ func matchRecordPatterns(record registryRecord, prefix []byte) bool {
 	}
 
 	return false
+}
+
+// containsFoldASCII checks for an ASCII case-insensitive literal without allocation.
+func containsFoldASCII(data []byte, literal string) bool {
+	if literal == "" {
+		return true
+	}
+
+	limit := len(data) - len(literal)
+	if limit < 0 {
+		return false
+	}
+
+	first := foldASCII(literal[0])
+	for offset := 0; offset <= limit; {
+		lower := bytes.IndexByte(data[offset:limit+1], first)
+		upper := -1
+		if first >= 'a' && first <= 'z' {
+			upper = bytes.IndexByte(data[offset:limit+1], first-('a'-'A'))
+		}
+		if lower < 0 && upper < 0 {
+			return false
+		}
+
+		if lower < 0 || upper >= 0 && upper < lower {
+			lower = upper
+		}
+		offset += lower
+
+		matched := true
+		for index := 1; index < len(literal); index++ {
+			if foldASCII(data[offset+index]) != foldASCII(literal[index]) {
+				matched = false
+				break
+			}
+		}
+
+		if matched {
+			return true
+		}
+
+		offset++
+	}
+
+	return false
+}
+
+// foldASCII lowercases one ASCII uppercase letter.
+func foldASCII(value byte) byte {
+	if value >= 'A' && value <= 'Z' {
+		return value + ('a' - 'A')
+	}
+
+	return value
 }
 
 // resolveEvidence selects the final type and relation from path/content evidence.

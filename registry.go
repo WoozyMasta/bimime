@@ -10,6 +10,8 @@ import "regexp"
 type registryRecord struct {
 	// contentPatterns match path-scoped semantic refinements.
 	contentPatterns []*regexp.Regexp
+	// contentHint is a required case-insensitive literal shared by the patterns.
+	contentHint string
 	// magic lists static signatures for this type.
 	magic [][]byte
 	// typ is the public descriptor with explicit classification metadata.
@@ -1075,6 +1077,7 @@ var registryDefinitions = []registryRecord{
 			Traits:      TraitText | TraitSource,
 		},
 		contentPatterns: []*regexp.Regexp{regexp.MustCompile(`(?i)\bclass\s+cfgmodels\b`)},
+		contentHint:     "cfgmodels",
 	},
 	{
 		typ: Type{
